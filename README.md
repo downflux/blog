@@ -33,4 +33,4 @@ git rm ${MODULE}
 
 ## Caveat
 
-Ensure the default branch is set correctly in .gitmodules.
+Ensure the default branch is set correctly in `.gitmodules`.
