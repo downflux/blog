@@ -1,5 +1,7 @@
 plugins:
   - jekyll-paginate
+  - jekyll-titles-from-headings
+
 markdown: kramdown
 highlighter: rouge
 logo: false
@@ -10,9 +12,9 @@ exclude:
   - kasper/
   - docs/
 
-name: "DownFlux Blog"
-title: "DownFlux Blog"
-description: "Archive of technical, API, unit, and balance design documentation."
+locale: "en-US"
+title: "DownFlux"
+description: "Design docs and tech writeups related to the DownFlux RTS"
 url: "https://downflux.github.io/blog/"
 domain_name: "https://downflux.github.io/blog/"
 
