@@ -15,7 +15,7 @@ permalink: pretty
 
 locale: "en-US"
 baseurl: "/blog"
-url: "http://downflux.github.io"
+url: "https://downflux.github.io"
 
 name: "DownFlux"
 description: "Design docs and tech writeups related to the DownFlux RTS"
