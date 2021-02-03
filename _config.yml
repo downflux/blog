@@ -6,6 +6,10 @@ logo: false
 paginate: 15
 baseurl: /blog
 
+excludes:
+  - kasper/
+  - docs/
+
 name: "DownFlux Blog"
 title: "DownFlux Blog"
 description: "Archive of technical, API, unit, and balance design documentation."
