@@ -2,21 +2,22 @@ plugins:
   - jekyll-paginate
   - jekyll-titles-from-headings
 
-markdown: kramdown
-highlighter: rouge
-logo: false
-paginate: 15
-baseurl: /blog
-
 exclude:
   - kasper/
   - docs/
 
+markdown: kramdown
+highlighter: rouge
+logo: false
+paginate: 15
+
 locale: "en-US"
-title: "DownFlux"
-description: "Design docs and tech writeups related to the DownFlux RTS"
-url: "https://downflux.github.io/blog/"
+baseurl: /blog
 domain_name: "https://downflux.github.io/blog/"
+url: "https://downflux.github.io/blog/"
+
+name: "DownFlux"
+description: "Design docs and tech writeups related to the DownFlux RTS"
 
 author: "Minke Zhang"
 
