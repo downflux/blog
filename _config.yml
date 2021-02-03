@@ -7,7 +7,7 @@ exclude:
   - kasper/
   - docs/
 include:
-  - **/assets/
+  - assets/
 
 markdown: kramdown
 highlighter: rouge
