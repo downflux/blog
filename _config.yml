@@ -1,3 +1,11 @@
 remote_theme: rosario/kasper
+plugins:
+  - jekyll-paginate
+markdown: kramdown
 
 title: "Demo DownFlux Blog"
+
+url: ""
+domain_name: "https://downflux.github.io/blog/"
+
+author: "Minke Zhang"
