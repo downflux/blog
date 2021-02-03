@@ -1,1 +1,1 @@
-../../docs/design/fsm.md
+../docs/design/fsm.md
