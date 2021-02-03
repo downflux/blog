@@ -1,5 +1,6 @@
 # Adds support for detached front matter.
-# See https://github.com/jekyll/jekyll/issues/1082#issuecomment-177167222.
+# See https://github.com/jekyll/jekyll/issues/1082#issuecomment-177167222
+# for more information.
 
 module ReadMetaFiles
   class Generator < Jekyll::Generator
