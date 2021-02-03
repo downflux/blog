@@ -1,5 +1,6 @@
 plugins:
   - jekyll-paginate
+  - jekyll-redirect-from
   - jekyll-titles-from-headings
 
 exclude:
@@ -10,6 +11,7 @@ markdown: kramdown
 highlighter: rouge
 logo: false
 paginate: 15
+permalink: pretty
 
 locale: "en-US"
 baseurl: /blog
