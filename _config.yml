@@ -6,9 +6,9 @@ logo: false
 paginate: 15
 baseurl: /blog
 
-excludes:
-  - kasper/_posts/
-  - docs/*
+exclude:
+  - kasper/
+  - docs/
 
 name: "DownFlux Blog"
 title: "DownFlux Blog"
