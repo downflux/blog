@@ -7,8 +7,8 @@ paginate: 15
 baseurl: /blog
 
 excludes:
-  - kasper/
-  - docs/
+  - kasper/*
+  - docs/*
 
 name: "DownFlux Blog"
 title: "DownFlux Blog"
