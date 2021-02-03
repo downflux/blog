@@ -2,3 +2,6 @@
 	path = docs
 	url = git@github.com:downflux/docs.git
         branch = main
+[submodule "kasper"]
+	path = kasper
+	url = https://github.com/rosario/kasper
