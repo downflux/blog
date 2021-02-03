@@ -23,4 +23,6 @@ author: "Minke Zhang"
 # jekyll-titles-from-headings
 # Remove H1 headings from content since page.title renders it anyways.
 titles_from_headings:
+  enabled: true
   strip_title: true
+  collections: true
