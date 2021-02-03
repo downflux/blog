@@ -7,7 +7,7 @@ on:
 jobs:
   publish:
     name: Publish Blog
-    run-on: ubuntu-latest
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
