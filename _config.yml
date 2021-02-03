@@ -14,9 +14,8 @@ paginate: 15
 permalink: pretty
 
 locale: "en-US"
-baseurl: /blog
-domain_name: "https://downflux.github.io/blog/"
-url: "https://downflux.github.io/blog/"
+baseurl: "/blog"
+url: "https://downflux.github.io"
 
 name: "DownFlux"
 description: "Design docs and tech writeups related to the DownFlux RTS"
