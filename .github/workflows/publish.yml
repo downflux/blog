@@ -16,3 +16,5 @@ jobs:
       - uses: helaili/jekyll-action@2.1.0
         with:
           token: ${{ secrets.JEKYLL_PAT }}
+          jekyll_src: '.'
+          gem_src: '.'
