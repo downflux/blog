@@ -11,7 +11,7 @@ exclude:
 markdown: kramdown
 highlighter: rouge
 logo: false
-paginate: 15
+paginate: 3
 permalink: pretty
 
 locale: "en-US"
