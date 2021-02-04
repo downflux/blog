@@ -8,4 +8,5 @@ group :jekyll_plugins do
   gem 'jekyll-paginate'
   gem 'jekyll-redirect-from'
   gem 'jekyll-titles-from-headings'
+  gem 'jekyll-postfiles'
 end

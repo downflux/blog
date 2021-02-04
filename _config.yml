@@ -2,12 +2,11 @@ plugins:
   - jekyll-paginate
   - jekyll-redirect-from
   - jekyll-titles-from-headings
+  - jekyll-postfiles
 
 exclude:
   - kasper/
   - docs/
-include:
-  - _posts/
 
 markdown: kramdown
 highlighter: rouge
