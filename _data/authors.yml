@@ -1,0 +1,15 @@
+# Author is a map of
+# 
+#   {
+#     name: string,
+#     url: url,
+#     about: string,
+#     avatar: url
+#   }
+
+users
+  - minke
+      name: Minke Zhang
+      url: https://blogzhang.com
+      about: Minke works on DownFlux in his spare time.
+      avatar: https://www.gravatar.com/avatar/9d7aad7d878f126cee5f4f9e1ea0975d?d=mm&size=200

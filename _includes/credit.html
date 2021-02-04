@@ -1,0 +1,8 @@
+<section>
+    {% if include.author and data.{{ include.author }} %}
+        {% assign a = data.{{ include.author }} %}
+        {% if a.name %}
+          {{ a.name }}
+        {% endif %}
+    {% endif %}
+</section>
