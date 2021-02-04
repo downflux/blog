@@ -11,12 +11,12 @@ exclude:
 markdown: kramdown
 highlighter: rouge
 logo: false
-paginate: 3
 permalink: pretty
-url: "https://blog.downflux.com"
+
+paginate: 3
+paginate_path: "/page/:num/"
 
 locale: "en-US"
-
 name: "DownFlux"
 description: "Design docs and tech writeups related to the DownFlux RTS"
 
