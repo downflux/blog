@@ -7,7 +7,7 @@ exclude:
   - kasper/
   - docs/
 include:
-  - _posts/assets/
+  - _posts/
 
 markdown: kramdown
 highlighter: rouge
