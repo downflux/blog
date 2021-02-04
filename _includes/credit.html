@@ -3,14 +3,13 @@
   {% if include.author and site.data.authors[include.author] %}
     {% assign a = site.data.authors[include.author] %}
 
-    <figure class="author-image">
-      <a class="img"
-         href="{{ a.url }}"
-         style="background-image: url({{ a.avatar }})">
-        <span class="hidden">{{ a.name }} avatar</span>
+    <div>
+      <a href="{{ a.url }}">
+        <img src="{{ a.avatar }}" alt="{{a.name}} avatar"/>
       </a>
-    </figure>
-    <section class="author">
+    </div>
+
+    <section>
       <h4>{{ a.name }}</h4>
       <p>{{ a.about }}</p>
     </section>
