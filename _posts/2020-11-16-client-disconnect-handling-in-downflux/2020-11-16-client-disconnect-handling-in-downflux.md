@@ -1,1 +1,1 @@
-../../docs/design/client.md
+../../docs/design/network.md
