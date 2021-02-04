@@ -8,7 +8,7 @@
 #   }
 
 users
-  - minke
+  minke
       name: Minke Zhang
       url: https://blogzhang.com
       about: Minke works on DownFlux in his spare time.
