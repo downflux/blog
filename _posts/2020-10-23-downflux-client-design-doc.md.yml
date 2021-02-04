@@ -1,5 +1,9 @@
 ---
 layout: post
+preview: >-
+  Outline the core mechanics necessary for rendering the server-calculated
+  game state to the players.
+tags: [design, client]
 redirect_from:
   - /design/client.html
 ---

@@ -1,5 +1,9 @@
 ---
 layout: post
+preview: >-
+   Design a communications model between a small number of clients concurrently
+   mutating a complex RTS game state.
+tags: [design, server]
 redirect_from:
   - /design/server.html
 ---

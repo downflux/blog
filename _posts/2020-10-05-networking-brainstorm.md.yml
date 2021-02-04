@@ -1,6 +1,8 @@
 ---
 layout: post
-preview: Interesting papers I came across while researching RTS game architecture.
+preview: >-
+  Interesting papers I came across while researching RTS game architecture.
+tags: [architecture, brainstorm]
 redirect_from:
   - /brainstorm/networking.html
 ---

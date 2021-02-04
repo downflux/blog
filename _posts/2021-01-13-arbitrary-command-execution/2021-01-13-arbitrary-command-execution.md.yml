@@ -1,5 +1,10 @@
 ---
 layout: post
+preview: >-
+  Mutating a shared state is especially hard if we lack a structured approach
+  to change operations. We share the design doc DownFlux uses to answer this
+  design question.
+tags [design, server, commands]
 redirect_from:
   - /design/fsm.html
 ---
