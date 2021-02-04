@@ -3,7 +3,7 @@
 <article>
 
   <header>
-    {% if include.preview %}
+    {% if include.preview == true %}
       <h2><a href="{{ p.url | relative_url }}">{{ p.title }}</a></h2>
     {% else %}
       <h1>{{ p.title }}</h1>
@@ -14,14 +14,14 @@
   </header>
 
   <section>
-    {% if include.preview and p.preview %}
+    {% if include.preview == true and p.preview %}
       {{ p.preview }}
-    {% else if !include.preview %}
+    {% else if include.preview == false %}
       {{ content }}
     {% endif %}
   </section>
 
-  {% !if include.preview %}
+  {% if include.preview == false %}
     <footer>
       {% include credit.html author=p.author %}
     </footer>
