@@ -2,12 +2,15 @@
     <img class="author-thumb" src="{{'/assets/images/profile.png' | relative_url}}>
     {{ site.author }}
 {% endif %}
-{% if post.categories.size > 0 %}
-    {{ post.categories | array_to_sentence_string }}
+
+{% if include.categories.size > 0 %}
+    {{ include.categories | array_to_sentence_string }}
 {% endif %}
-{% if post.tags.size > 0 %}
-    {{ post.tags | array_to_sentence_string }}
+
+{% if include.tags.size > 0 %}
+    {{ include.tags | array_to_sentence_string }}
 {% endif %}
-<time class="post-date" datetime="{{ post.date | date:"%Y-%m-%d" }}">
-    {{ post.date | date_to_string }}
+
+<time class="post-date" datetime="{{ include.date | date:"%Y-%m-%d" }}">
+    {{ include.date | date_to_string }}
 </time>

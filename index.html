@@ -46,7 +46,7 @@ about: 'about.html'
             {% endif %}
         </section>
         <footer class="post-meta">
-            {% include byline.html %}
+            {% include byline.html categories=post.categories tags=post.tags date=post.date %}
         </footer>
     </article>
 
