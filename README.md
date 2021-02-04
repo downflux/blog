@@ -8,6 +8,18 @@ git clone git@github.com:downflux/blog.git
 git submodule update --init --recursive
 ```
 
+## Local Build
+
+Sometimes we should install the environment locally to help debug development.
+
+See
+https://jekyllrb.com/docs/installation/,
+https://jekyllrb.com/docs/ruby-101/
+
+```bash
+bundle exec jekyll serve
+```
+
 ## Submodules
 
 ### Add

@@ -1,8 +1,20 @@
-<section>
-    {% if include.author and data.users.{{ include.author }} %}
-        {% assign a = data.users.{{ include.author }} %}
-        {% if a.name %}
-          {{ a.name }}
-        {% endif %}
-    {% endif %}
-</section>
+<div>
+
+  {% if include.author and site.data.authors[include.author] %}
+    {% assign a = site.data.authors[include.author] %}
+
+    <figure class="author-image">
+      <a class="img"
+         href="{{ a.url }}"
+         style="background-image: url({{ a.avatar }})">
+        <span class="hidden">{{ a.name }} avatar</span>
+      </a>
+    </figure>
+    <section class="author">
+      <h4>{{ a.name }}</h4>
+      <p>{{ a.about }}</p>
+    </section>
+
+  {% endif %}
+
+</div>

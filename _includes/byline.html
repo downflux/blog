@@ -1,16 +1,19 @@
-{% if site.author %}
-    <img class="author-thumb" src="{{'/assets/images/profile.png' | relative_url}}>
-    {{ site.author }}
-{% endif %}
+<div>
 
-{% if include.categories.size > 0 %}
-    {{ include.categories | array_to_sentence_string }}
-{% endif %}
+  {% if include.author and site.data.authors[include.author] %}
+    {% assign a = site.data.authors[include.author] %}
 
-{% if include.tags.size > 0 %}
-    {{ include.tags | array_to_sentence_string }}
-{% endif %}
+    <img class="author-thumb" src="{{ a.avatar }}" />
+    {{ a.name }}
+  {% endif %}
 
-<time class="post-date" datetime="{{ include.date | date:"%Y-%m-%d" }}">
+  {% assign cs = include.categories | concat: include.tags %}
+  {% if cs.size > 0 %}
+    {{ cs | array_to_sentence_string | prepend: 'on ' }}
+  {% endif %}
+
+  <time class="post-date" datetime="{{ include.date | date:"%Y-%m-%d" }}">
     {{ include.date | date_to_string }}
-</time>
+  </time>
+
+</div>
