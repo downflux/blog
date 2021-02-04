@@ -1,11 +1,14 @@
 plugins:
   - jekyll-paginate
   - jekyll-redirect-from
+
+  # Allows setting the H1 Markdown header as the page title.
   - jekyll-titles-from-headings
+
+  # Allows per-post assets.
   - jekyll-postfiles
 
 exclude:
-  - kasper/
   - docs/
 
 markdown: kramdown
@@ -16,12 +19,12 @@ permalink: pretty
 paginate: 3
 paginate_path: "/page/:num/"
 
-locale: "en-US"
+language: "en"
+timezone: "America/Los_Angeles"
 name: "DownFlux"
 description: "Design docs and tech writeups related to the DownFlux RTS"
 
 # jekyll-titles-from-headings
-# Remove H1 headings from content since page.title renders it anyways.
 titles_from_headings:
   enabled: true
   strip_title: true
