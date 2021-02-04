@@ -19,8 +19,6 @@ locale: "en-US"
 name: "DownFlux"
 description: "Design docs and tech writeups related to the DownFlux RTS"
 
-author: "Minke Zhang"
-
 # jekyll-titles-from-headings
 # Remove H1 headings from content since page.title renders it anyways.
 titles_from_headings:
