@@ -6,6 +6,8 @@ plugins:
 exclude:
   - kasper/
   - docs/
+include:
+  - _posts/assets/
 
 markdown: kramdown
 highlighter: rouge
