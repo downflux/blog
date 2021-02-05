@@ -1,4 +1,23 @@
 <nav>
-  <a href="{{'/' | relative_url }}">Home</a>
-  <a href="{{'feed.xml' | relative_url }}">RSS</a>
+  <a href="{{'/' | relative_url }}"><span class="fas fa-home"></span> Home</a>
+
+  {% if site.data.social.reddit %}
+    <a href="{{ site.data.social.reddit.link }}">
+      <span class="fab fa-reddit"></span>
+    </a>
+  {% endif %}
+
+  {% if site.data.social.twitter %}
+    <a href="{{ site.data.social.twitter.link }}">
+      <span class="fab fa-twitter"></span>
+    </a>
+  {% endif %}
+
+  {% if site.data.social.github %}
+    <a href="{{ site.data.social.github.link }}">
+      <span class="fab fa-github"></span>
+    </a>
+  {% endif %}
+
+  <a href="{{'feed.xml' | relative_url }}"><span class="fas fa-rss"></span></a>
 </nav>
