@@ -22,7 +22,7 @@ paginate_path: "/page/:num/"
 language: "en"
 timezone: "America/Los_Angeles"
 name: "DownFlux"
-description: "Design docs and tech writeups related to the DownFlux RTS"
+description: "A Gamedev Blog"
 
 # jekyll-titles-from-headings
 titles_from_headings:
