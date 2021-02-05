@@ -2,16 +2,14 @@
 
 <article>
 
-  <header>
-    {% if include.preview == true %}
-      <h2><a href="{{ p.url | relative_url }}">{{ p.title }}</a></h2>
-    {% else %}
-      <h1>{{ p.title }}</h1>
-    {% endif %}
-    <section>
-      {% include byline.html author=p.author categories=p.categories tags=p.tags date=p.date %}
-    </section>
-  </header>
+  {% if include.preview == true %}
+    <h2><a href="{{ p.url | relative_url }}">{{ p.title }}</a></h2>
+  {% else %}
+    <h1>{{ p.title }}</h1>
+  {% endif %}
+  <section>
+    {% include byline.html author=p.author categories=p.categories tags=p.tags date=p.date %}
+  </section>
 
   <section>
     {% if include.preview == true and p.preview %}
@@ -22,9 +20,7 @@
   </section>
 
   {% if include.preview == false %}
-    <footer>
-      {% include credit.html author=p.author %}
-    </footer>
+    {% include credit.html author=p.author %}
   {% endif %}
 
 </article>

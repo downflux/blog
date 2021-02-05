@@ -12,7 +12,7 @@ exclude:
   - docs/
 
 markdown: kramdown
-highlighter: rouge
+highlighter: none
 logo: false
 permalink: pretty
 

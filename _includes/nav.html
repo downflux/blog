@@ -1,23 +1,36 @@
-<nav>
-  <a href="{{'/' | relative_url }}"><span class="fas fa-home"></span> Home</a>
+<header class="sticky">
+
+  <a href="{{'/' | relative_url }}"
+     class="logo">{{ site.name }}
+  </a>
+
+  <a href="{{'/' | relative_url }}"
+     class="button"><span class="fas fa-home"></span> Home
+  </a>
 
   {% if site.data.social.reddit %}
-    <a href="{{ site.data.social.reddit.link }}">
-      <span class="fab fa-reddit"></span>
+    <a href="{{ site.data.social.reddit.link }}"
+       class="button">
+      <span class="fab fa-reddit"></span> {{ site.data.social.reddit.name }}
     </a>
   {% endif %}
 
   {% if site.data.social.twitter %}
-    <a href="{{ site.data.social.twitter.link }}">
-      <span class="fab fa-twitter"></span>
+    <a href="{{ site.data.social.twitter.link }}"
+       class="button">
+      <span class="fab fa-twitter"></span> {{ site.data.social.twitter.name }}
     </a>
   {% endif %}
 
   {% if site.data.social.github %}
-    <a href="{{ site.data.social.github.link }}">
-      <span class="fab fa-github"></span>
+    <a href="{{ site.data.social.github.link }}"
+       class="button">
+      <span class="fab fa-github"></span> {{ site.data.social.github.name }}
     </a>
   {% endif %}
 
-  <a href="{{'feed.xml' | relative_url }}"><span class="fas fa-rss"></span></a>
-</nav>
+  <a href="{{'feed.xml' | relative_url }}"
+     class="button"><span class="fas fa-rss"></span> RSS
+  </a>
+
+</header>

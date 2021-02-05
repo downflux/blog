@@ -1,9 +1,9 @@
-<div>
+<div class="byline">
 
   <div>
     {% if include.author and site.data.authors[include.author] %}
       {% assign a = site.data.authors[include.author] %}
-      {{ a.name }}
+      <address>{{ a.name }}</address>
     {% endif %}
 
     <time class="post-date" datetime="{{ include.date | date:"%Y-%m-%d" }}">

@@ -3,15 +3,14 @@ layout: default
 cover: false
 ---
 
-<header>
-  {% include nav.html %}
+<div>
   <h1>{{ site.name }}</h1>
   <h2>
     {% if site.description %}
       {{ site.description }}
     {% endif %}
   </h2>
-</header>
+</div>
 
 <main>
 
@@ -19,8 +18,6 @@ cover: false
     {% include article.html post=p preview=true %}
   {% endfor %}
 
-  <div>
-    {% include pagination.html %}
-  </div>
+  {% include pagination.html %}
 
 </main>

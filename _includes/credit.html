@@ -1,13 +1,21 @@
-<div>
+{% if include.author and site.data.authors[include.author] %}
+  {% assign a = site.data.authors[include.author] %}
 
-  {% if include.author and site.data.authors[include.author] %}
-    {% assign a = site.data.authors[include.author] %}
+  <section>
+    <div id="post-footer">
+      <div id="post-footer-img-container" class="circular">
+        <div id="post-footer-img"
+             class="circular"
+             style="background-image: url({{ a.avatar }})">
+        </div>
+      </div>
+    </div>
+    <div id="post-footer-content">
+      <address>
+        <a href="{{ a.url }}">{{ a.name }}</a>
+      </address>
+      {{ a.about }}
+    </div>
+  </section>
 
-    <section>
-      <h4><a href="{{ a.url }}">{{ a.name }}</a></h4>
-      <p>{{ a.about }}</p>
-    </section>
-
-  {% endif %}
-
-</div>
+{% endif %}
