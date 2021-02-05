@@ -17,7 +17,7 @@ https://jekyllrb.com/docs/installation/,
 https://jekyllrb.com/docs/ruby-101/
 
 ```bash
-bundle exec jekyll serve
+bundle exec jekyll clean && bundle exec jekyll serve
 ```
 
 ## Submodules
