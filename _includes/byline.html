@@ -1,17 +1,21 @@
 <div>
 
-  {% if include.author and site.data.authors[include.author] %}
-    {% assign a = site.data.authors[include.author] %}
-    {{ a.name }}
-  {% endif %}
+  <div>
+    {% if include.author and site.data.authors[include.author] %}
+      {% assign a = site.data.authors[include.author] %}
+      {{ a.name }}
+    {% endif %}
 
-  {% assign cs = include.categories | concat: include.tags %}
-  {% if cs.size > 0 %}
-    {{ cs | array_to_sentence_string | prepend: 'on ' }}
-  {% endif %}
+    <time class="post-date" datetime="{{ include.date | date:"%Y-%m-%d" }}">
+      {{ include.date | date_to_string }}
+    </time>
+  </div>
 
-  <time class="post-date" datetime="{{ include.date | date:"%Y-%m-%d" }}">
-    {{ include.date | date_to_string }}
-  </time>
+  <div>
+    {% assign cs = include.categories | concat: include.tags %}
+    {% if cs.size > 0 %}
+      {{ cs | array_to_sentence_string }}
+    {% endif %}
+  </div>
 
 </div>

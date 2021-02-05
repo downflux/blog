@@ -15,7 +15,7 @@
 
   <section>
     {% if include.preview == true and p.preview %}
-      {{ p.preview }}
+      <p>{{ p.preview }}</p>
     {% else if include.preview == false %}
       {{ content }}
     {% endif %}
