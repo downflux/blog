@@ -1,0 +1,39 @@
+---
+---
+
+/* Color palette, generated with https://color.adobe.com/create/image. */
+
+$primary_dark: #262526;
+$primary_light: #9fa3a6;
+$primary: #737372;
+$accent: #594c45;
+$accent_dark: #0d0000;
+
+a {
+  color: $accent;
+  text-decoration: none;
+  transition: color 0.25s;
+}
+
+a:hover {
+  color: $accent_dark;
+  transition: color 0.25s;
+}
+
+body {
+  background: $primary_light;
+
+  margin: 0 auto;
+  padding-bottom: 20vh;
+
+  width: 960px;
+  max-width: 100%;
+
+  line-height: 1.5em;
+
+  color: $primary_dark;
+}
+
+h5, h6 {
+    font-size: 2rem;
+}
