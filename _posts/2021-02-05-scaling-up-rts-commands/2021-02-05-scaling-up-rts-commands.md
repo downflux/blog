@@ -1,0 +1,1 @@
+../../docs/blog/scaling_commands/scaling_commands.md
