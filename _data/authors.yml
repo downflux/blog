@@ -1,11 +1,10 @@
-# Author is a map of
+# Fully specified author struct
 # 
-#   {
-#     name: string,
-#     url: url,
-#     about: string,
-#     avatar: url
-#   }
+# id:
+#   name: string
+#   url: url
+#   about: string
+#   avatar: url
 
 minke:
     name: Minke Zhang

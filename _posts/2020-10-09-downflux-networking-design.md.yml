@@ -1,9 +1,15 @@
 ---
 layout: post
-preview: >-
-   Design a communications model between a small number of clients concurrently
-   mutating a complex RTS game state.
 tags: [design, server]
+
+social:
+preview: >-
+  Design a communications model between a small number of clients concurrently
+  mutating a complex RTS game state.
+social:
+  name: Twitter
+  url: https://twitter.com/downfluxgame/status/1319204521055191040
+  
 redirect_from:
   - /design/server.html
 ---
