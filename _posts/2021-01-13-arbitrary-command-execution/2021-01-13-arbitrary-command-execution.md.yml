@@ -7,8 +7,8 @@ preview: >-
   to change operations. We share the design doc DownFlux uses to answer this
   design question.
 social:
-  name: Twitter
-  url: https://twitter.com/downfluxgame/status/1349293989136977921
+  name: Reddit
+  url: https://www.reddit.com/r/DownFlux/comments/kwdi93/downflux_command_design_doc/
 
 redirect_from:
   - /design/fsm.html
