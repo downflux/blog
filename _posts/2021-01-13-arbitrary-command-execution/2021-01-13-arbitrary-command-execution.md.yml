@@ -1,6 +1,6 @@
 ---
 layout: post
-tags: [design, server, commands]
+tags: [design doc, server, commands]
 
 preview: >-
   Mutating a shared state is especially hard if we lack a structured approach

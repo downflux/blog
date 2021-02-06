@@ -1,10 +1,12 @@
 ---
 layout: post
+tags: [design doc, network]
+
 preview: >-
   Because DownFlux is not built on top of any existing gaming engine, we need
   to design a way for client-server network connections to be resilient to
   network flakiness.
-tags: [design, network]
+
 redirect_from:
   - /design/network.html
 ---
