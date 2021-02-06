@@ -23,13 +23,17 @@ div.byline, div#pagination, div#post-footer-content, div#share {
   margin: 12px 8px;
 }
 
+div#post-footer-content {
+  text-align: center;
+}
+
 $post_footer_img_container_size: 80px;
 $post_footer_img_container_padding: 6px;
 $post_footer_img_container_offset: ($post_footer_img_container_size + 2 * ($post_footer_img_container_padding + 1)) / 2;
 
 div#post-footer {
   // Offset entire div.
-  margin-top: $post_footer_img_container_offset;
+  margin-top: $post_footer_img_container_offset + 10px;
   margin-bottom: -($post_footer_img_container_offset);
 
   width: 100%;
