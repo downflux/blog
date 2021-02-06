@@ -20,6 +20,12 @@
   </section>
 
   {% if include.preview == false %}
+    {% if p.social %}
+      <div id="share">
+        Comment on <a href="{{ p.social.url }}">{{ p.social.name }}</a>.
+      </div>
+    {% endif %}
+
     {% include credit.html author=p.author %}
   {% endif %}
 

@@ -1,10 +1,15 @@
 ---
 layout: post
+tags: [design, server, commands]
+
 preview: >-
   Mutating a shared state is especially hard if we lack a structured approach
   to change operations. We share the design doc DownFlux uses to answer this
   design question.
-tags: [design, server, commands]
+social:
+  name: Twitter
+  url: https://twitter.com/downfluxgame/status/1349293989136977921
+
 redirect_from:
   - /design/fsm.html
 ---

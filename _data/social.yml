@@ -1,3 +1,18 @@
+# Fully specified site-wide social links
+#
+# twitter:
+#   name: string
+#   link: url
+#
+# github:
+#   name: string
+#   link: url
+#
+# reddit:
+#   name: string
+#   link: url
+
+
 twitter:
   name: "@downfluxgame"
   link: https://twitter.com/downfluxgame
