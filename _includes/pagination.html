@@ -11,6 +11,7 @@
   {% endif %}
 
   <span>{{paginator.page}} of {{paginator.total_pages}}</span>
+
   {% if paginator.next_page %} 
     <a href="{{ paginator.next_page_path | relative_url }}"
        title="Next Page">Older <span class="fas fa-chevron-right"></span> </a>

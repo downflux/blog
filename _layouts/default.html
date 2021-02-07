@@ -26,15 +26,14 @@
 
   {{ content }}
 
-  <footer>
-    {{ site.name }} &copy; {{"now" | date: "%Y"}}
-  </footer>
+  {% include footer.html %}
+
+  <!--
+    Stops triggering CSS transitions on page load.
+
+    See https://stackoverflow.com/a/42969608.
+    -->
+  <script> </script>
 </body>
 
-<!--
-  Stops triggering CSS transitions on page load.
-
-  See https://stackoverflow.com/a/42969608.
-  -->
-<script> </script>
 </html>
