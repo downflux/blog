@@ -9,5 +9,10 @@
 minke:
     name: Minke Zhang
     url: https://blogzhang.com
-    about: Minke works on DownFlux in his spare time.
+    about: >-
+      Minke is a software engineer based in the US. He enjoys running, climbing,
+      photography, and banana-related facts. He works on DownFlux in his
+      spare time.
+
+      Minke prefers spaces over tabs in Python.
     avatar: https://www.gravatar.com/avatar/9d7aad7d878f126cee5f4f9e1ea0975d?d=mm&size=200
