@@ -25,7 +25,7 @@ h6 {
   font-size: 1em;
 }
 
-div.byline, div#pagination, div#post-footer-content, div#share {
+div.byline, div#pagination, div#post-footer-content, div#share, div#footer-nav-wrap {
   margin: 12px 8px;
 }
 
@@ -41,6 +41,16 @@ body {
 
   width: 960px;
   max-width: 100%;
+}
+
+div#footer-nav-wrap {
+  margin: 0 0 16px 0;
+
+  ul#footer-nav {
+    list-style-type: none;
+    padding: 0;
+    margin: 0 0;
+  }
 }
 
 $post_footer_img_container_size: 80px;
