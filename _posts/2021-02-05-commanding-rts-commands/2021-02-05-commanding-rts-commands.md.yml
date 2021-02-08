@@ -4,4 +4,7 @@ tags: [FSM, visitor pattern, commands]
 
 preview: >-
   How does one scale up dozens of state mutation flows in an RTS game?
+social:
+  name: Reddit
+  url: https://www.reddit.com/r/DownFlux/comments/lf2j4x/commanding_rts_command_scaling_state_mutations/
 ---
