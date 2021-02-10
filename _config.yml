@@ -9,7 +9,7 @@ plugins:
   - jekyll-postfiles
 
 exclude:
-  - docs/
+  - third_party/
 
 markdown: kramdown
 highlighter: none

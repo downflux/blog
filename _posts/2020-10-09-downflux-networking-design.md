@@ -1,1 +1,1 @@
-../docs/design/server.md
+../third_party/docs/design/server.md

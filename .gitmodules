@@ -1,4 +1,4 @@
-[submodule "docs"]
-	path = docs
+[submodule "third_party/docs"]
+	path = third_party/docs
 	url = git@github.com:downflux/docs.git
-        branch = main
+	branch = main

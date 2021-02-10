@@ -1,1 +1,1 @@
-../docs/brainstorm/networking.md
+../third_party/docs/brainstorm/networking.md

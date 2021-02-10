@@ -1,1 +1,1 @@
-../../docs/blog/scaling_commands/scaling_commands.md
+../../third_party/docs/blog/scaling_commands/scaling_commands.md

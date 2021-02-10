@@ -1,1 +1,1 @@
-../../docs/design/network.md
+../../third_party/docs/design/network.md
