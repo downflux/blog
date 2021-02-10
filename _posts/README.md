@@ -33,7 +33,6 @@ social:
   url: https://reddit.com/...
 
 # Unused fields.
-
 title: Some Title
 date: 1999-12-31 23:59:59 -0800
 excerpt: >-

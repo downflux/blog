@@ -13,9 +13,11 @@ $background_color: #f8f8f8;
 
 /* Tweaks from default minicss theme. */
 
-// Fix render bug where <pre><code> blocks indent the first line.
-// <pre><code> is valid HTML; see https://stackoverflow.com/questions/4611591/
-// for more information.
+/**
+ * Fix render bug where <pre><code> blocks indent the first line.
+ * <pre><code> is valid HTML; see https://stackoverflow.com/questions/4611591/
+ * for more information.
+ */
 pre code {
   padding: 0;
 }
