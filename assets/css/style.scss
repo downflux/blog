@@ -55,6 +55,15 @@ div#footer-nav-wrap {
   }
 }
 
+@media only screen and (max-width: 640px) {
+
+  /* Maximize smaller screen estate */
+  header.sticky {
+    position: static;
+  }
+
+}
+
 $post_footer_img_container_size: 80px;
 $post_footer_img_container_padding: 6px;
 $post_footer_img_container_offset: ($post_footer_img_container_size + 2 * ($post_footer_img_container_padding + 1)) / 2;
