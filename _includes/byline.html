@@ -11,11 +11,13 @@
     </time>
   </div>
 
-  <div>
-    {% assign cs = include.categories | concat: include.tags %}
-    {% if cs.size > 0 %}
-      {{ cs | array_to_sentence_string }}
-    {% endif %}
-  </div>
+  {% if include.categories and include.tags %}
+    <div>
+      {% assign cs = include.categories | concat: include.tags %}
+      {% if cs.size > 0 %}
+        {{ cs | array_to_sentence_string }}
+      {% endif %}
+    </div>
+  {% endif %}
 
 </div>
