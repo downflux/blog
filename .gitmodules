@@ -2,3 +2,7 @@
 	path = third_party/docs
 	url = git@github.com:downflux/docs.git
 	branch = main
+[submodule "third_party/jekyll-mini"]
+	path = third_party/jekyll-mini
+	url = git@github.com:minkezhang/jekyll-mini.git
+	branch = main
