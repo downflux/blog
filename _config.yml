@@ -23,6 +23,7 @@ language: "en"
 timezone: "America/Los_Angeles"
 title: "DownFlux"
 description: "A Gamedev Blog"
+url: https://blog.downflux.com
 
 # jekyll-titles-from-headings
 titles_from_headings:
