@@ -17,7 +17,8 @@ https://jekyllrb.com/docs/installation/,
 https://jekyllrb.com/docs/ruby-101/
 
 ```bash
-bundle exec jekyll clean && bundle exec jekyll serve
+# Copy files instead of symlinks when JEKYLL_ENV == production.
+JEKYLL_ENV=production; bundle exec jekyll clean && bundle exec jekyll serve
 ```
 
 ## Submodules
