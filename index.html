@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+  <title>DownFlux</title>
+  <meta name="description" content="" />
+
+  <meta name="HandheldFriendly" content="True" />
+  <meta name="MobileOptimized" content="320" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css" integrity="sha512-HK5fgLBL+xu6dm/Ii3z4xhlSUyZgTT9tuc/hSrtw6uzJOvgRr2a9jyxxT1ely+B+xFAmJKVSTbpM/CuL7qxO8w=="
+        crossorigin="anonymous" />
+
+  <!--
+    https://minicss.org/
+
+    TODO(minkezhang): Download and reference colors dynamically for tweaks.
+    -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/mini.css/3.0.1/mini-default.min.css">
+
+  
+    <link rel="stylesheet" href="/assets/css/tweaks.css" />
+  
+    <link rel="stylesheet" href="/assets/css/base.css" />
+  
+    <link rel="stylesheet" href="/assets/css/postimage.css" />
+  
+    <link rel="stylesheet" href="/assets/css/masonry.css" />
+  
+</head>
+
+<body>
+  <header class="sticky">
+
+  <a href="/"
+     class="logo">DownFlux
+  </a>
+
+  <a href="/"
+     class="button"><span class="fas fa-home fa-fw"></span> Home
+  </a>
+
+  <a href="https://github.com/downflux"
+     class="button">
+    <span class="fab fa-github fa-fw"></span> GitHub
+  </a>
+
+  <a href="/feed.xml"
+     class="button"><span class="fas fa-rss fa-fw"></span> RSS
+  </a>
+
+</header>
+
+
+  <div>
+  <h1>DownFlux</h1>
+  <h2>
+    
+      A Gamedev Blog
+    
+  </h2>
+</div>
+
+<main>
+
+  
+    
+
+
+
+<article>
+
+  
+
+  
+    <h2><a href="/2021/02/05/commanding-rts-commands/">Commanding RTS Commands</a></h2>
+  
+
+  
+    
+    
+
+    <section>
+      
+
+<div class="byline">
+
+  <div>
+    
+      
+      <address>Minke Zhang</address>
+    
+
+    <time class="post-date" datetime="2021-02-05">
+      05 Feb 2021
+    </time>
+  </div>
+
+  
+    <div>
+      
+
+      
+      
+
+      
+      
+
+      
+        FSM, visitor pattern, and commands
+      
+    </div>
+  
+
+</div>
+
+    </section>
+  
+
+  <section>
+    
+      <p>How does one scale up dozens of state mutation flows in an RTS game?</p>
+    
+  </section>
+
+  
+
+</article>
+
+  
+    
+
+
+
+<article>
+
+  
+
+  
+    <h2><a href="/2021/01/13/arbitrary-command-execution/">Arbitrary Command Execution</a></h2>
+  
+
+  
+    
+    
+
+    <section>
+      
+
+<div class="byline">
+
+  <div>
+    
+      
+      <address>Minke Zhang</address>
+    
+
+    <time class="post-date" datetime="2021-01-13">
+      13 Jan 2021
+    </time>
+  </div>
+
+  
+    <div>
+      
+
+      
+      
+
+      
+      
+
+      
+        design doc, server, and commands
+      
+    </div>
+  
+
+</div>
+
+    </section>
+  
+
+  <section>
+    
+      <p>Mutating a shared state is especially hard if we lack a structured approach to change operations. We share the design doc DownFlux uses to answer this design question.</p>
+    
+  </section>
+
+  
+
+</article>
+
+  
+    
+
+
+
+<article>
+
+  
+
+  
+    <h2><a href="/2020/11/16/client-disconnect-handling-in-downflux/">Client Disconnect Handling in DownFlux</a></h2>
+  
+
+  
+    
+    
+
+    <section>
+      
+
+<div class="byline">
+
+  <div>
+    
+      
+      <address>Minke Zhang</address>
+    
+
+    <time class="post-date" datetime="2020-11-16">
+      16 Nov 2020
+    </time>
+  </div>
+
+  
+    <div>
+      
+
+      
+      
+
+      
+      
+
+      
+        design doc and network
+      
+    </div>
+  
+
+</div>
+
+    </section>
+  
+
+  <section>
+    
+      <p>Because DownFlux is not built on top of any existing gaming engine, we need to design a way for client-server network connections to be resilient to network flakiness.</p>
+    
+  </section>
+
+  
+
+</article>
+
+  
+    
+
+
+
+<article>
+
+  
+
+  
+    <h2><a href="/2020/10/23/downflux-client-design-doc/">DownFlux Client Design Doc</a></h2>
+  
+
+  
+    
+    
+
+    <section>
+      
+
+<div class="byline">
+
+  <div>
+    
+      
+      <address>Minke Zhang</address>
+    
+
+    <time class="post-date" datetime="2020-10-23">
+      23 Oct 2020
+    </time>
+  </div>
+
+  
+    <div>
+      
+
+      
+      
+
+      
+      
+
+      
+        design doc and client
+      
+    </div>
+  
+
+</div>
+
+    </section>
+  
+
+  <section>
+    
+      <p>Outline the core mechanics necessary for rendering the server-calculated game state to the players.</p>
+    
+  </section>
+
+  
+
+</article>
+
+  
+    
+
+
+
+<article>
+
+  
+
+  
+    <h2><a href="/2020/10/09/downflux-networking-design/">DownFlux Networking Design</a></h2>
+  
+
+  
+    
+    
+
+    <section>
+      
+
+<div class="byline">
+
+  <div>
+    
+      
+      <address>Minke Zhang</address>
+    
+
+    <time class="post-date" datetime="2020-10-09">
+      09 Oct 2020
+    </time>
+  </div>
+
+  
+    <div>
+      
+
+      
+      
+
+      
+      
+
+      
+        design doc and server
+      
+    </div>
+  
+
+</div>
+
+    </section>
+  
+
+  <section>
+    
+      <p>Design a communications model between a small number of clients concurrently mutating a complex RTS game state.</p>
+    
+  </section>
+
+  
+
+</article>
+
+  
+    
+
+
+
+<article>
+
+  
+
+  
+    <h2><a href="/2020/10/05/networking-brainstorm/">Networking Brainstorm</a></h2>
+  
+
+  
+    
+    
+
+    <section>
+      
+
+<div class="byline">
+
+  <div>
+    
+      
+      <address>Minke Zhang</address>
+    
+
+    <time class="post-date" datetime="2020-10-05">
+      05 Oct 2020
+    </time>
+  </div>
+
+  
+    <div>
+      
+
+      
+      
+
+      
+      
+
+      
+        architecture and brainstorm
+      
+    </div>
+  
+
+</div>
+
+    </section>
+  
+
+  <section>
+    
+      <p>Interesting papers I came across while researching RTS game architecture.</p>
+    
+  </section>
+
+  
+
+</article>
+
+  
+
+  
+
+
+
+<div id="pagination">
+
+  
+
+  <span>1 of 1</span>
+
+  
+
+</div>
+
+
+</main>
+
+
+  
+
+<footer>
+
+  
+    <div id="footer-nav-wrap">
+
+      <ul id="footer-nav">
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-twitter fa-fw"></span>
+              <a href="https://twitter.com/downfluxgame">
+                @downfluxgame
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-github fa-fw"></span>
+              <a href="https://github.com/downflux">
+                downflux
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-reddit fa-fw"></span>
+              <a href="https://reddit.com/r/downflux">
+                r/downflux
+              </a>
+            </li>
+          
+        
+      </ul>
+
+    </div>
+  
+
+  <div>
+    DownFlux &copy; 2021
+  </div>
+
+</footer>
+
+
+  <!--
+    Stops triggering CSS transitions on page load.
+    See https://stackoverflow.com/a/42969608.
+    -->
+  <script> </script>
+</body>
+
+</html>

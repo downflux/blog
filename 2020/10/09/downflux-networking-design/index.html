@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+  <title>DownFlux</title>
+  <meta name="description" content="" />
+
+  <meta name="HandheldFriendly" content="True" />
+  <meta name="MobileOptimized" content="320" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css" integrity="sha512-HK5fgLBL+xu6dm/Ii3z4xhlSUyZgTT9tuc/hSrtw6uzJOvgRr2a9jyxxT1ely+B+xFAmJKVSTbpM/CuL7qxO8w=="
+        crossorigin="anonymous" />
+
+  <!--
+    https://minicss.org/
+
+    TODO(minkezhang): Download and reference colors dynamically for tweaks.
+    -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/mini.css/3.0.1/mini-default.min.css">
+
+  
+    <link rel="stylesheet" href="/assets/css/tweaks.css" />
+  
+    <link rel="stylesheet" href="/assets/css/base.css" />
+  
+    <link rel="stylesheet" href="/assets/css/postimage.css" />
+  
+    <link rel="stylesheet" href="/assets/css/masonry.css" />
+  
+</head>
+
+<body>
+  <header class="sticky">
+
+  <a href="/"
+     class="logo">DownFlux
+  </a>
+
+  <a href="/"
+     class="button"><span class="fas fa-home fa-fw"></span> Home
+  </a>
+
+  <a href="https://github.com/downflux"
+     class="button">
+    <span class="fab fa-github fa-fw"></span> GitHub
+  </a>
+
+  <a href="/feed.xml"
+     class="button"><span class="fas fa-rss fa-fw"></span> RSS
+  </a>
+
+</header>
+
+
+  <main>
+  
+
+
+
+<article>
+
+  
+
+  
+    <h1>DownFlux Networking Design</h1>
+  
+
+  
+    
+    
+
+    <section>
+      
+
+<div class="byline">
+
+  <div>
+    
+      
+      <address>Minke Zhang</address>
+    
+
+    <time class="post-date" datetime="2020-10-09">
+      09 Oct 2020
+    </time>
+  </div>
+
+  
+    <div>
+      
+
+      
+      
+
+      
+      
+
+      
+        <a href="/tag/design-doc">design doc</a> and <a href="/tag/server">server</a>
+      
+    </div>
+  
+
+</div>
+
+    </section>
+  
+
+  <section>
+    
+      <p>Client-Server Model for a Large-Scale RTS</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="text-align: left">Status</th>
+      <th style="text-align: left">final</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align: left">Author(s)</td>
+      <td style="text-align: left">minke.zhang@gmail.com</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Contributor(s)</td>
+      <td style="text-align: left"> </td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Last Updated</td>
+      <td style="text-align: left">2020-10-09</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="objective">Objective</h2>
+
+<p>Design a communications model between a small number of clients concurrently
+mutating a complex RTS game state.</p>
+
+<h2 id="background">Background</h2>
+
+<p>Relevant to this document, DownFlux will be an RTS game for a small number
+(~10) of players within normal RTS parameters. We are exploring different
+networking models for the game, and have proposed the following design as a
+potential implementation of client-state interaction.</p>
+
+<h2 id="overview">Overview</h2>
+
+<h3 id="assumptions">Assumptions</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>Estimated Bound</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Players</td>
+      <td>10</td>
+    </tr>
+    <tr>
+      <td>Controllable Entities</td>
+      <td>1k</td>
+    </tr>
+    <tr>
+      <td>Map Size</td>
+      <td>1k x 1k tiles</td>
+    </tr>
+    <tr>
+      <td>Server Tick Rate</td>
+      <td>10Hz (see <a href="https://www.reddit.com/r/starcraft/comments/8q0jka/e0fhawd?utm_source=share&amp;utm_medium=web2x&amp;context=3">justification</a>)</td>
+    </tr>
+    <tr>
+      <td>Network Latency</td>
+      <td>100ms</td>
+    </tr>
+    <tr>
+      <td>Network Bandwidth</td>
+      <td>1Mbps / player (see <a href="https://gamedev.stackexchange.com/a/96184">justification</a>)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="related-work">Related Work</h2>
+
+<p>A list of historically relevant papers and articles can be found in the
+<a href="../brainstorm/networking.md">DownFlux docs repo</a>.</p>
+
+<h2 id="infrastructure">Infrastructure</h2>
+
+<p>The networking model will be a client-server model, as opposed to the more
+commonly implemented lockstep framework used in most RTS games. We’ve decided
+that this should dramatically simplify the design, and dodge around tricky
+issues like creating a consistency model for a fully connected P2P system from
+scratch. One of the main benefits of the lockstep model is saving on
+computation and bandwidth costs (on the centralized server)<sup id="fnref:1" role="doc-noteref"><a href="#fn:1" class="footnote">1</a></sup>, but
+modern consumer processing power and bandwidth should be enough to handle the
+workload.</p>
+
+<p>The client consists of a renderer<sup id="fnref:2" role="doc-noteref"><a href="#fn:2" class="footnote">2</a></sup> and an API component, with the
+API component sending player commands to the server, e.g. “build barracks
+here”, “attack enemy infantry”, “use special ability”, etc.</p>
+
+<p>The server consists of two message queues (input and output), and a core loop
+which handles the burdensome task of simulating the game state. The input queue
+regularly issues a list of player-issued messages to the core loop, sorted by
+the server clock time. The core loop then takes these messages and runs through
+an internal subprocess order in which these messages and the existing game
+state are taken as input. A list of output messages will be then piped to the
+outgoing queue, which will fire the back to the client immediately, along with
+information on when the messages should be rendered. The client will merge
+these messages into the existing game state to be picked up by the rendering
+component.</p>
+
+<h2 id="detailed-design">Detailed Design</h2>
+
+<h3 id="types">Types</h3>
+
+<pre><code>type ClientID, EntityID, CurveID string
+
+type TickID string
+type Tick float64
+
+type Entity interface {
+    ID() EntityID
+    Curve(t (HP|PRIMARY_COOLDOWN|...)) CurveID
+}
+
+type Curve interface {
+    ID() CurveID
+    Type() (LINEAR|STEP|PULSE|...)
+    Parent() EntityID
+    Tick(float64) Tick
+    Value(Tick) float64
+}
+</code></pre>
+
+<h3 id="client">Client</h3>
+
+<pre><code>CURRENT_TICK_ID TickID = ""
+</code></pre>
+
+<h4 id="api-component">API Component</h4>
+
+<p>Breaking down the command that will be issued to the server, we can broadly
+speculate this would include</p>
+
+<ul>
+  <li><code>Build(c Coordinate, t (BARRACKS|REFINERY|...))</code></li>
+  <li><code>Ping(c Coordinate, t (ATTACK|GUARD|...))</code></li>
+  <li><code>Move(entity_id string, c Coordinate, t (NORMAL|REVERSE|ATTACK_MOVE|GUARD|...))</code></li>
+  <li><code>Attack(entity_id, target_entity_id string)</code></li>
+  <li><code>UseAbility(entity_id, target_entity_id string, c Coordinate, t (PRIMARY|SECONDARY|ULTIMATE))</code></li>
+</ul>
+
+<p>Each API call will add an additional <code>CURRENT_TICK_KEY</code> to each message when
+sending the message to the server.</p>
+
+<h4 id="server">Server</h4>
+
+<p>The server simulates the entire game state and facilitates player-player
+interaction (e.g. combat). At the heart of the server is a linear game loop
+consisting of <em>phases</em>. Phases are run serially, but logic within each phase
+should exploit concurrency where possible.</p>
+
+<pre><code>SERVER_TICK_RATE int = 10
+CURRENT_TICK Tick = 0  // At 60Hz, we will need to run the game for
+                       // 400+ days before encountering overflow
+CURRENT_TICK_ID TickID = ""
+TICK_ID_LOOKUP map[Tick]TickID = nil  // length TICK_ID_WINDOW_SIZE
+TICK_ID_WINDOW_SIZE int = 2  // Number of ticks in the past the
+                             // server will accept as valid (initial)
+                             // input
+</code></pre>
+
+<h4 id="new-tick-phase">New Tick Phase</h4>
+
+<p>This phase is a trivial subroutine which</p>
+
+<ol>
+  <li>increments <code>CURRENT_TICK</code>,</li>
+  <li>generates a new <code>CURRENT_TICK_ID</code>, and</li>
+  <li>update <code>TICK_ID_LOOKUP</code> with the new data, as well as dropping the oldest
+row</li>
+</ol>
+
+<h4 id="input-queue-phase">Input Queue Phase</h4>
+
+<pre><code>CLIENT_RECENT_TICK map[ClientID]Tick = nil
+MESSAGE_QUEUE []PlayerCommand = nil
+</code></pre>
+
+<p>The input phase keeps a buffer of incoming player messages. The buffer is
+sorted by the received timestamp of the server.</p>
+
+<p>For each incoming message, the input phase will do some basic precondition
+tests:</p>
+
+<ol>
+  <li>if message has an embedded <code>TickID</code> which does not show up in the keys of
+<code>TICK_ID_LOOKUP</code>, discard message and relay error to sender;</li>
+  <li>then, if message has an embedded <code>TickID</code> corresponding to a <code>Tick</code> <em>before</em>
+the <code>Tick</code> found in <code>CLIENT_RECENT_TICK</code>, discard message and relay error to
+sender;</li>
+  <li>then update the client’s <code>CLIENT_RECENT_TICK</code> entry with the corresponding
+<code>Tick</code> and enqueue the message</li>
+</ol>
+
+<p>At the <strong>beginning</strong> of each tick, the queue will</p>
+
+<ol>
+  <li>discard duplicate messages,</li>
+  <li>log queue alongside <code>CURRENT_TICK</code>,</li>
+  <li>sent off to the core loop for processing.</li>
+</ol>
+
+<h4 id="output-queue-phase">Output Queue Phase</h4>
+
+<pre><code>MESSAGE_QUEUE []Curves = nil
+</code></pre>
+
+<p>The output queue keeps a buffer of outgoing messages to each player. An
+outgoing message may either be an entity mutation (e.g. a creating or
+destroying a building or unit), or a curve<sup id="fnref:6" role="doc-noteref"><a href="#fn:6" class="footnote">3</a></sup> mutation (e.g.
+altering a path, starting an attack, etc.).</p>
+
+<p>For each player, we will need to</p>
+
+<ol>
+  <li>filter the outgoing messages by the player POV, i.e. don’t broadcast
+stealthed units or units under the fog of war, and</li>
+  <li>filter any curve message by the player POV, i.e. don’t show a position curve
+(movement) that goes 50 ticks in the future if the position of the unit will
+exit the player POV; we can optionally skip this step if the domain of the
+curve extends into the future only a little bit (e.g. less than 1s of
+rendering time)</li>
+</ol>
+
+<p>This filter step can be a no-op for now while we implement everything else, but
+if we do not enable filtering, the player can exploit the additional
+information in the form of map hacks.</p>
+
+<p>At the <strong>end</strong> of the tick, the output phase will</p>
+
+<ol>
+  <li>log unfiltered queue with <code>CURRENT_TICK</code>,</li>
+  <li>send players their respective messages, along with the new <code>CURRENT_TICK_ID</code></li>
+</ol>
+
+<h4 id="core-loop-phase">Core Loop Phase</h4>
+
+<pre><code>TRIGGER_QUEUE map[Tick]CurveID = nil
+ENTITY_LOOKUP map[EntityID]Entity = nil  // Entity.Curves() is a list
+                                         // of CurveIDs
+CURVE_LOOKUP map[CurveID]Curve = nil  // Curve.Parent() is a single
+                                      // EntityID
+</code></pre>
+
+<p>The core loop is tasked with updating the actual game state, including editing
+the map terrain and mutating the curves. This is a heavy subroutine.</p>
+
+<h5 id="delete-entities">Delete Entities</h5>
+
+<p>For the current server tick, we check the <code>TRIGGER_QUEUE</code><sup id="fnref:7" role="doc-noteref"><a href="#fn:7" class="footnote">4</a></sup> for any
+curves that have significant effects, e.g. setting health to 0. For these
+curves, we need to</p>
+
+<ol>
+  <li>delete the parent entity (e.g. structure or unit)</li>
+  <li>delete the row from the queue</li>
+</ol>
+
+<h5 id="create-entities">Create Entities</h5>
+
+<p>New structures and units may be instructed to be built, either by a player
+command (new structure) or when a production facility finishes production (unit
+ready). For the former, we will read from the message queue, whereas the latter
+will need to be checked against <code>TRIGGER_QUEUE</code>.</p>
+
+<p>New entities will need to be added to the <code>ENTITY_LOOKUP</code> master list.</p>
+
+<p>For buildings which have a set construction time, we will</p>
+
+<ol>
+  <li>generate a new curve for the new entity representing when the structure may
+be used (e.g. start producing units),</li>
+  <li>add the curve to the output queue</li>
+</ol>
+
+<h5 id="update-curves">Update Curves</h5>
+
+<p>Each subphase of curve mutation may be done concurrently.</p>
+
+<h6 id="collision-detection">Collision Detection</h6>
+
+<p>We need to check if any entities (units, buildings, projectiles, crates, etc.)
+overlap hitboxes – if they do, we need to resolve any actions that may occur
+(taking damage, grabbing upgrade, redo pathing, etc.). For entities which
+require deletion (e.g. projectiles and crates), add to <code>TRIGGER_QUEUE</code> – do
+not delete in this step.</p>
+
+<p>Collision detection may be implemented via
+<a href="https://gamedev.stackexchange.com/q/48565">QuadTree</a>, but can be null-op for
+now. This phase may possibly support being done asynchronously by a separate
+process in the background.</p>
+
+<h6 id="pathing">Pathing</h6>
+
+<p>For this phase, we will read from the message queue and update / create curves
+with new paths (and add to the output queue). This may</p>
+
+<ul>
+  <li>be done in parallel, and</li>
+  <li>is abstracted away from the actual implementation of pathfinding and may be
+either generated by HPF<sup id="fnref:3" role="doc-noteref"><a href="#fn:3" class="footnote">5</a></sup> or flow fields<sup id="fnref:4" role="doc-noteref"><a href="#fn:4" class="footnote">6</a></sup>.</li>
+</ul>
+
+<p>If flow fields are used for pathfinding, the simulation for steering forces are
+all simulated on the server.</p>
+
+<h6 id="attack-resolution">Attack Resolution</h6>
+
+<p>Attacks from the input queue will need to be processed and aggregated. For each
+attack command from the queue, we will need to find the target entity and
+connect the curve with the target entity. This will be in the form of an HP
+curve for the target entity, which itself is an aggregated curve formed by the
+summation of all attack (and heal) curves targeting the entity.</p>
+
+<p>If the HP curve has changed, add / update the <code>TRIGGER_QUEUE</code> row for when the
+HP curve reaches 0</p>
+
+<p>Any updated curves will need to be added to the output queue.</p>
+
+<h5 id="ability-resolution">Ability Resolution</h5>
+
+<p>Abilities like shields, speed boosts, etc. will have associated curves and must
+be updated and added to the output queue.</p>
+
+<h2 id="caveats">Caveats</h2>
+
+<h3 id="tick-rate-tuning">Tick Rate Tuning</h3>
+
+<p>The server will have significant impact on the network latency in this model –
+if we assume (per <a href="#assumptions">Assumptions</a>) a 100ms client-server travel
+time, and that the server itself will take another 100ms (at 10Hz), our total
+end-to-end latency is 300ms. While it may not matter much ultimately in the
+game results<sup id="fnref:5" role="doc-noteref"><a href="#fn:5" class="footnote">7</a></sup>, we will still need to employ around 20 frames of
+<a href="https://www.gabrielgambetta.com/client-side-prediction-server-reconciliation.html">client-side prediction</a>
+to smooth out user input. How fast can we make the server tick rate to cut down
+on the minimal latency?</p>
+
+<h3 id="client-api-component">Client API Component</h3>
+
+<p>We could alternatively consolidate <code>Move</code>, <code>Attack</code>, and <code>UseAbility</code> into more
+general API endpoints:</p>
+
+<ul>
+  <li><code>EntityTargetAbility(entity_id, target_entity_id string, t (MOVE|REVERSE|ATTACK_MOVE|ATTACK|PRIMARY|SECONDARY|...))</code></li>
+  <li><code>EntityTargetAoE(entity_id string, c Coordinate, t (GUARD|PRIMARY|SECONDARY|...)</code></li>
+</ul>
+
+<p>We decided this is needlessly generic and will create more problems server side
+in decoding the intent of the API than it solves in a unified API.</p>
+
+<h2 id="scalability">Scalability</h2>
+
+<h3 id="multi-server-processing">Multi-Server Processing</h3>
+
+<p>Look into Redis for in-memory SQL implementation, as our <code>Event</code> and <code>Curve</code>
+data are rather tabular (as are the message queues). This is useful if / when
+we scale up to multiple server nodes.</p>
+
+<h2 id="redundancy-and-reliability">Redundancy and Reliability</h2>
+
+<p>TBD</p>
+
+<h2 id="security">Security</h2>
+
+<p>TBD</p>
+
+<h2 id="privacy">Privacy</h2>
+
+<p>The server will be aware of</p>
+
+<ul>
+  <li>identifiable user data (IP, username, etc.)</li>
+  <li>user game input (game commands) and the time the commands were received</li>
+</ul>
+
+<p>The server will not keep track of the user IP, or other non-game related
+identifiable data. The user ID, username, and game input will be tracked for
+replay purposes.</p>
+
+<h2 id="work-estimates">Work Estimates</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Work Item</th>
+      <th>Time Estimate</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>barebones client and server</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement tick phase</td>
+      <td>1 day</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement input queue</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement output queue</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement create entities</td>
+      <td>1 week</td>
+      <td>DEMO</td>
+    </tr>
+    <tr>
+      <td>implement pathfind</td>
+      <td>1 week</td>
+      <td>MVP (no flow field)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="footnotes">Footnotes</h2>
+
+<div class="footnotes" role="doc-endnotes">
+  <ol>
+    <li id="fn:1" role="doc-endnote">
+      <p>Terrano, Mark. “1500 Archers on a 28.8: Network Programming in Age of Empires and Beyond.” 2005. <a href="#fnref:1" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:2" role="doc-endnote">
+      <p>Discussing the specifics of the rendering engine is out of scope of
+this design document. <a href="#fnref:2" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:6" role="doc-endnote">
+      <p>Stolen from
+<a href="https://www.forrestthewoods.com/blog/tech_of_planetary_annihilation_chrono_cam/">The Tech of Planetary Annihilation: ChronoCam</a>.
+Curves are linear transformations of a variable trajectory. This transformation
+saves on data being sent to the client. <a href="#fnref:6" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:7" role="doc-endnote">
+      <p>We need to decide if we want a generic trigger queue, or a queue
+broken down by category, with the <code>CurveID</code> still mapping back to a global
+lookup map. <a href="#fnref:7" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:3" role="doc-endnote">
+      <p>Botea, Adi. “Near optimal hierarchical path-finding.” 2004. <a href="#fnref:3" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:4" role="doc-endnote">
+      <p>Emerson, Elijah. “Crowd Pathfinding and Steering Using Flow Field Tiles.” 2020. <a href="#fnref:4" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:5" role="doc-endnote">
+      <p>Claypool, Mark. “The effect of latency on user performance in Real-Time Strategy games.” 2005. <a href="#fnref:5" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+    
+  </section>
+
+  
+    
+      <div id="share">
+        Comment on <a href="https://twitter.com/downfluxgame/status/1319204521055191040">Twitter</a>.
+      </div>
+    
+
+    
+      
+
+
+  
+
+  <section>
+    <div id="post-footer">
+      <div id="post-footer-img-container" class="circular">
+        <div id="post-footer-img"
+             class="circular"
+             style="background-image: url(https://www.gravatar.com/avatar/9d7aad7d878f126cee5f4f9e1ea0975d?d=mm&size=200)">
+        </div>
+      </div>
+    </div>
+    <div id="post-footer-content">
+      <address>
+        <a href="https://blogzhang.com">Minke Zhang</a>
+      </address>
+      Minke is a software engineer based in the US. He enjoys running, climbing, photography, and banana-related facts. He works on DownFlux in his spare time.
+Minke prefers spaces over tabs in Python.
+    </div>
+  </section>
+
+
+
+    
+  
+
+</article>
+
+</main>
+
+
+  
+
+<footer>
+
+  
+    <div id="footer-nav-wrap">
+
+      <ul id="footer-nav">
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-twitter fa-fw"></span>
+              <a href="https://twitter.com/downfluxgame">
+                @downfluxgame
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-github fa-fw"></span>
+              <a href="https://github.com/downflux">
+                downflux
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-reddit fa-fw"></span>
+              <a href="https://reddit.com/r/downflux">
+                r/downflux
+              </a>
+            </li>
+          
+        
+      </ul>
+
+    </div>
+  
+
+  <div>
+    DownFlux &copy; 2021
+  </div>
+
+</footer>
+
+
+  <!--
+    Stops triggering CSS transitions on page load.
+    See https://stackoverflow.com/a/42969608.
+    -->
+  <script> </script>
+</body>
+
+</html>

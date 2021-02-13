@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+  <title>DownFlux</title>
+  <meta name="description" content="" />
+
+  <meta name="HandheldFriendly" content="True" />
+  <meta name="MobileOptimized" content="320" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css" integrity="sha512-HK5fgLBL+xu6dm/Ii3z4xhlSUyZgTT9tuc/hSrtw6uzJOvgRr2a9jyxxT1ely+B+xFAmJKVSTbpM/CuL7qxO8w=="
+        crossorigin="anonymous" />
+
+  <!--
+    https://minicss.org/
+
+    TODO(minkezhang): Download and reference colors dynamically for tweaks.
+    -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/mini.css/3.0.1/mini-default.min.css">
+
+  
+    <link rel="stylesheet" href="/assets/css/tweaks.css" />
+  
+    <link rel="stylesheet" href="/assets/css/base.css" />
+  
+    <link rel="stylesheet" href="/assets/css/postimage.css" />
+  
+    <link rel="stylesheet" href="/assets/css/masonry.css" />
+  
+</head>
+
+<body>
+  <header class="sticky">
+
+  <a href="/"
+     class="logo">DownFlux
+  </a>
+
+  <a href="/"
+     class="button"><span class="fas fa-home fa-fw"></span> Home
+  </a>
+
+  <a href="https://github.com/downflux"
+     class="button">
+    <span class="fab fa-github fa-fw"></span> GitHub
+  </a>
+
+  <a href="/feed.xml"
+     class="button"><span class="fas fa-rss fa-fw"></span> RSS
+  </a>
+
+</header>
+
+
+  <main>
+  
+
+
+
+<article>
+
+  
+
+  
+    <h1>Networking Brainstorm</h1>
+  
+
+  
+    
+    
+
+    <section>
+      
+
+<div class="byline">
+
+  <div>
+    
+      
+      <address>Minke Zhang</address>
+    
+
+    <time class="post-date" datetime="2020-10-05">
+      05 Oct 2020
+    </time>
+  </div>
+
+  
+    <div>
+      
+
+      
+      
+
+      
+      
+
+      
+        <a href="/tag/architecture">architecture</a> and <a href="/tag/brainstorm">brainstorm</a>
+      
+    </div>
+  
+
+</div>
+
+    </section>
+  
+
+  <section>
+    
+      <h2 id="articles">Articles</h2>
+
+<ul>
+  <li><a href="https://zoo.cs.yale.edu/classes/cs538/readings/papers/terrano_1500arch.pdf">1500 Archers on a 28.8: Network Programming in Age of Empires and Beyond</a> 2001</li>
+</ul>
+
+<p>Seminal paper on how Age of Empires II dealt with the networking problem by
+implementing client lockstep simulations. Lockstep implementation here requires
+N<sup>2</sup> stable (but slow) connections.</p>
+
+<ul>
+  <li><a href="http://web.cs.wpi.edu/~claypool/papers/rts/paper.pdf">The effect of latency on user performance in Real-Time Strategy games</a> 2005</li>
+</ul>
+
+<p>Important finding that overall network latency didn’t actually impact the
+outcome of RTS games much.</p>
+
+<ul>
+  <li><a href="https://dl.acm.org/doi/abs/10.1145/1146816.1146833">Rokkatan: scaling an RTS game design to the massively multiplayer realm</a> 2006</li>
+</ul>
+
+<p>Scales up clients connecting to a game by implementing multiple proxy servers.
+Servers are totally connected but each proxy is only allowed to make a specific
+set of (mutually exclusive) mutations. Features dynamic rebalancing in case a
+server crashes.</p>
+
+<ul>
+  <li><a href="https://www.gamedev.net/forums/topic/419969-wargamerts-network-architecture---a-danger-of-lock-step-commands-synchronization/">Wargame/RTS Network Architecture - a danger of Lock-step Commands Synchronization</a> 2006</li>
+  <li><a href="https://gafferongames.com/post/what_every_programmer_needs_to_know_about_game_networking/">What Every Programmer Needs To Know About Game Networking</a> 2010</li>
+</ul>
+
+<p>Goes into detail a bit about the evolution of networking models in gaming; goes
+a bit into detail about how modern day rewind &amp; replay lag compensation works.</p>
+
+<ul>
+  <li><a href="https://gamedev.stackexchange.com/questions/16669/networking-in-real-time-strategy-games">Networking in real-time strategy games</a> 2011</li>
+  <li><a href="https://gamedev.stackexchange.com/questions/15192/rts-game-protocol">RTS Game Protocol</a> 2011</li>
+</ul>
+
+<p>Short, accessible explanation of one possible lockstep implementation.</p>
+
+<ul>
+  <li><a href="https://www.forrestthewoods.com/blog/synchronous_rts_engines_and_a_tale_of_desyncs/">Synchronous RTS Engines and a Tale of Desyncs</a> 2011</li>
+</ul>
+
+<p>Accessible explanation of how <em>Supreme Commander</em> (2007) implemented and
+optimized lockstep. Specifically deals with global tick synchronization
+implementation – may also be applicable in client / server model.</p>
+
+<ul>
+  <li><a href="https://www.forrestthewoods.com/blog/synchronous_rts_engines_2_sync_harder/">Synchronous RTS Engines 2: Sync Harder</a> 2011</li>
+</ul>
+
+<p>Goes into detail about how <em>Supreme Commander</em> implemented the communications
+and sync protocol. Very useful reference.</p>
+
+<ul>
+  <li><a href="http://www.raknet.com/forum/index.php?topic=4500.0">Question on Synchronous networking</a> 2011</li>
+</ul>
+
+<p>Includes some links to sample implementations of lockstep.</p>
+
+<ul>
+  <li><a href="https://www.gamasutra.com/view/news/126022/Opinion_Synchronous_RTS_Engines_And_A_Tale_of_Desyncs.php">Opinion: Synchronous RTS Engines And A Tale of Desyncs</a> 2011</li>
+</ul>
+
+<p>More information on lockstep implementation and explanation.</p>
+
+<ul>
+  <li><a href="https://gamedev.stackexchange.com/questions/29258/client-server-rts-networking-with-lockstep-and-lag">Client-Server RTS networking with lockstep and lag</a> 2012</li>
+  <li><a href="https://www.forrestthewoods.com/blog/tech_of_planetary_annihilation_chrono_cam/">The Tech of Planetary Annihilation: ChronoCam</a> 2013</li>
+</ul>
+
+<p>Very good article on a possible approach to a client-server model of RTS
+network communications – by sending linear transformations of data
+trajectories (instead of frame-by-frame updates) to save on bandwidth.</p>
+
+<ul>
+  <li><a href="https://www.forrestthewoods.com/blog/qa_planetary_annihilation_chrono_cam/">Q&amp;A — Planetary Annihilation Chrono Cam</a> 2013</li>
+  <li><a href="https://answers.unity.com/questions/488308/unity-rts-networking.html">Unity RTS Networking</a> 2013</li>
+  <li><a href="https://www.gamedev.net/forums/topic/663587-planetary-annihilation-networking/">Planetary Annihilation networking</a> 2014</li>
+  <li><a href="https://gamedev.stackexchange.com/questions/75393/networking-for-real-time-strategy-games">Networking for Real Time Strategy games</a> 2014</li>
+  <li><a href="https://www.gamasutra.com/blogs/MaksymHryniv/20150107/233596/Cross_platform_RTS_synchronization_and_floating_point_indeterminism.php">Cross platform RTS synchronization and floating point indeterminism</a> 2015</li>
+  <li><a href="https://gamedev.stackexchange.com/questions/96166/how-do-i-efficiently-send-rts-unit-selections-over-the-network">How do I efficiently send RTS unit selections over the network?</a> 2015</li>
+</ul>
+
+<p>Convenient back of the envelope bandwith calculations for RTS games.</p>
+
+<ul>
+  <li><a href="https://medium.com/@treeform/dont-use-lockstep-in-rts-games-b40f3dd6fddb">Don’t use Lockstep in RTS games</a> 2016</li>
+  <li><a href="https://www.factorio.com/blog/post/fff-76">Friday Facts #76 - MP inside out</a> 2015</li>
+</ul>
+
+<p><em>Factorio</em> originally used lockstep to deal with broadcasting game state. This
+is an interesting case as it similarly has to deal with large maps and changing
+terrain with large amounts of data being transferred across multiple clients.</p>
+
+<ul>
+  <li><a href="https://www.factorio.com/blog/post/fff-147">Friday Facts #147 - Multiplayer rewrite</a> 2016</li>
+</ul>
+
+<p>Describes in detail the networking model migration for <em>Factorio</em> from lockstep
+to server-elect model.</p>
+
+<ul>
+  <li><a href="https://www.gamasutra.com/blogs/DruErridge/20181004/327885/Building_a_Multiplayer_RTS_in_Unreal_Engine.php">Building a Multiplayer RTS in Unreal Engine</a> 2018</li>
+</ul>
+
+<p>Summarizes lockstep and client-server implementation and provides sample
+command message samples.</p>
+
+<ul>
+  <li><a href="https://www.eurogamer.net/articles/2018-01-07-the-making-of-supreme-commander">The making of Supreme Commander</a> 2018</li>
+  <li><a href="https://www.reddit.com/r/starcraft/comments/8q0jka/how_is_starcraft_2_so_incredibly_responsive/">How is starcraft 2 so incredibly responsive?</a> 2018</li>
+</ul>
+
+<p>Starcraft II’s internal tick rate is 16 - 20Hz; apparently other RTS can be as
+low as 8Hz. Good reference / justification.</p>
+
+<h2 id="code-references">Code References</h2>
+
+<ul>
+  <li><a href="https://github.com/mrdav30/LockstepRTSEngine">LockstepRTSEngine</a></li>
+  <li><a href="https://github.com/neurodrone/crdt">CRDT</a></li>
+  <li><a href="ftp://ftp.3drealms.com/source/duke3dsource.zip">Duke Nukem 3D lockstep implementation</a></li>
+</ul>
+
+<h2 id="queries">Queries</h2>
+
+<ul>
+  <li><a href="https://www.google.com/search?q=rts+game+networking+site:gamedev.stackexchange.com&amp;rlz=1C1CHBF_enUS694US694&amp;sxsrf=ALeKk024wioAzr9rCIlxFbAjzaGjpDvjrQ:1601876726173&amp;sa=X&amp;ved=2ahUKEwiU3fLp35zsAhVQsZ4KHQrtC-cQrQIoBHoECAcQBQ">RTS game networking query</a></li>
+</ul>
+
+    
+  </section>
+
+  
+    
+
+    
+      
+
+
+  
+
+  <section>
+    <div id="post-footer">
+      <div id="post-footer-img-container" class="circular">
+        <div id="post-footer-img"
+             class="circular"
+             style="background-image: url(https://www.gravatar.com/avatar/9d7aad7d878f126cee5f4f9e1ea0975d?d=mm&size=200)">
+        </div>
+      </div>
+    </div>
+    <div id="post-footer-content">
+      <address>
+        <a href="https://blogzhang.com">Minke Zhang</a>
+      </address>
+      Minke is a software engineer based in the US. He enjoys running, climbing, photography, and banana-related facts. He works on DownFlux in his spare time.
+Minke prefers spaces over tabs in Python.
+    </div>
+  </section>
+
+
+
+    
+  
+
+</article>
+
+</main>
+
+
+  
+
+<footer>
+
+  
+    <div id="footer-nav-wrap">
+
+      <ul id="footer-nav">
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-twitter fa-fw"></span>
+              <a href="https://twitter.com/downfluxgame">
+                @downfluxgame
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-github fa-fw"></span>
+              <a href="https://github.com/downflux">
+                downflux
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-reddit fa-fw"></span>
+              <a href="https://reddit.com/r/downflux">
+                r/downflux
+              </a>
+            </li>
+          
+        
+      </ul>
+
+    </div>
+  
+
+  <div>
+    DownFlux &copy; 2021
+  </div>
+
+</footer>
+
+
+  <!--
+    Stops triggering CSS transitions on page load.
+    See https://stackoverflow.com/a/42969608.
+    -->
+  <script> </script>
+</body>
+
+</html>
