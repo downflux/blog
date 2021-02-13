@@ -35,23 +35,24 @@ pagination:
   per_page: 15
   permalink: '/page/:num/'
   sort_reverse: true
+  title: ':title'
 
 autopages:
   enabled: true
   tags:
     layouts: ['collection.html']
-    title: 'Tag :tag'
+    title: ':tag'
     slugify:
       mode: default
       case: false
   collections:
     layouts: ['collection.html']
-    title: 'Collection :col'
+    title: ':col'
     slugify:
       mode: default
   categories:
     layouts: ['collection.html']
-    title: 'Category :cat'
+    title: ':cat'
     slugify:
       mode: default
 
