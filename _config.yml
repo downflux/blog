@@ -1,5 +1,5 @@
 plugins:
-  - jekyll-paginate
+  - jekyll-paginate-v2
   - jekyll-redirect-from
 
   # Allows setting the H1 Markdown header as the page title.
@@ -16,13 +16,10 @@ highlighter: none
 logo: false
 permalink: pretty
 
-paginate: 15
-paginate_path: "/page/:num/"
-
-language: "en"
-timezone: "America/Los_Angeles"
-title: "DownFlux"
-description: "A Gamedev Blog"
+language: 'en'
+timezone: 'America/Los_Angeles'
+title: 'DownFlux'
+description: 'A Gamedev Blog'
 url: https://blog.downflux.com
 
 # jekyll-titles-from-headings
@@ -31,9 +28,36 @@ titles_from_headings:
   strip_title: true
   collections: true
 
+# jekyll-paginate-v2
+pagination:
+  enabled: true
+  collection: 'posts'
+  per_page: 15
+  permalink: '/page/:num/'
+  sort_reverse: true
+
+autopages:
+  enabled: true
+  tags:
+    layouts: ['collection.html']
+    title: 'Tag :tag'
+    slugify:
+      mode: default
+      case: false
+  collections:
+    layouts: ['collection.html']
+    title: 'Collection :col'
+    slugify:
+      mode: default
+  categories:
+    layouts: ['collection.html']
+    title: 'Category :cat'
+    slugify:
+      mode: default
+
 defaults:
   -
     scope:
-      path: ""
+      path: ''
     values:
       author: minke
