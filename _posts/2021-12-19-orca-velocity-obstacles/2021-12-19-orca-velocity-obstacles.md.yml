@@ -7,4 +7,8 @@ preview: >-
   planning and local collision avoidance components. We discuss how to model an
   agent-agent collision and reduce the problem into a linear optimization
   problem.
+
+social:
+  name: Reddit
+  url: https://www.reddit.com/r/DownFlux/comments/rk82tg/generating_velocity_obstacles_for_local_collision/
 ---
