@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+  <title>DownFlux</title>
+  <meta name="description" content="" />
+
+  <meta name="HandheldFriendly" content="True" />
+  <meta name="MobileOptimized" content="320" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css" integrity="sha512-HK5fgLBL+xu6dm/Ii3z4xhlSUyZgTT9tuc/hSrtw6uzJOvgRr2a9jyxxT1ely+B+xFAmJKVSTbpM/CuL7qxO8w=="
+        crossorigin="anonymous" />
+
+  <!--
+    https://minicss.org/
+
+    TODO(minkezhang): Download and reference colors dynamically for tweaks.
+    -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/mini.css/3.0.1/mini-default.min.css">
+
+  
+    <link rel="stylesheet" href="/assets/css/tweaks.css" />
+  
+    <link rel="stylesheet" href="/assets/css/base.css" />
+  
+    <link rel="stylesheet" href="/assets/css/postimage.css" />
+  
+    <link rel="stylesheet" href="/assets/css/masonry.css" />
+  
+</head>
+
+<body>
+  <header class="sticky">
+
+  <a href="/"
+     class="logo">DownFlux
+  </a>
+
+  <a href="/"
+     class="button"><span class="fas fa-home fa-fw"></span> Home
+  </a>
+
+  <a href="https://github.com/downflux"
+     class="button">
+    <span class="fab fa-github fa-fw"></span> GitHub
+  </a>
+
+  <a href="/feed.xml"
+     class="button"><span class="fas fa-rss fa-fw"></span> RSS
+  </a>
+
+</header>
+
+
+  <main>
+  
+
+
+
+<article>
+
+  
+
+  
+    <h1>Local Collision Avoidance</h1>
+  
+
+  
+    
+    
+
+    <section>
+      
+
+<div class="byline">
+
+  <div>
+    
+      
+      <address>Minke Zhang</address>
+    
+
+    <time class="post-date" datetime="2021-12-19">
+      19 Dec 2021
+    </time>
+  </div>
+
+  
+    <div>
+      
+
+      
+      
+
+      
+      
+
+      
+        <a href="/tag/blog">blog</a>, <a href="/tag/orca">orca</a>, <a href="/tag/vo">vo</a>, and <a href="/tag/pathfinding">pathfinding</a>
+      
+    </div>
+  
+
+</div>
+
+    </section>
+  
+
+  <section>
+    
+      <p><em>See ORCA in action at
+<a href="http://github.com/downflux/go-orca">github.com/downflux/go-orca</a>.</em></p>
+
+<p>Consider a rectangle. If we were to double the length and width of the box, we
+<em>quadruple</em> the total area – the area of a 2D object increases much faster than
+its characteristic length. We sometimes refer to this phenomena, and others like
+it, as <em>the curse of dimensionality</em>. The basic idea is that when there are
+decisions to be made, adding more factors to consider is <em>really</em> slow.</p>
+
+<p>We are using this rectangle to represent the world map in DownFlux. One of the
+fundamental things we need to do in a real-time strategy game is to order units
+to move around the map. Pathfinding techniques such as A* are great with
+finding the optimal global path – but for large maps, we have to search <em>a lot</em>
+due to the curse. This problem balloons when we consider the amount of units
+that can typically generate in a RTS, e.g. on the order of thousands.
+Furthermore, remember that all of these units have hitboxes – when we run
+pathfinding, not only do we need to ensure units do not collide with walls, we
+also need to make sure units don’t collide with <em>one another</em>. As the units are
+all moving, the only way we can do this within the A* framework is to
+recalculate the paths. A lot.</p>
+
+<p>Putting all of this together, we expect that pathfinding will be a significant
+drain on our computing resources, of which we have very little when taking into
+consideration these computations will all need to be completed within the
+fraction of a second comprising a server tick.</p>
+
+<p>In order to reduce the pathfinding computation time then, it appears we need to
+tackle the problem in two fronts –</p>
+
+<ol>
+  <li>
+    <p>find a way to apply the results of a single A* calculation to multiple
+units, and</p>
+  </li>
+  <li>
+    <p>reduce the number of A* pathfinding calculations which need to occur due to
+potential collisions</p>
+  </li>
+</ol>
+
+<p>A common command pattern in real-time strategy games is for a player to issue a
+move command to an entire group of units. A natural inclination then, is to run
+A* only on the single move target for all the units currently selected. But
+doing so will naturally generate numerous collision events as the units converge
+on a common target – so we need a way to calculate local unit movement without
+falling back to A*. We need <em>local collision avoidance detection</em>.</p>
+
+<h2 id="orca">ORCA</h2>
+
+<p>Optimal Reciprocal Collision Avoidance (ORCA) is a technique which guarantees
+local collision avoidance for a set of independent agents; that is, we can
+simulate a bunch of moving objects, and ensure that the objects do not overlap,
+without (or with very limited) knowledge of any global state. This is incredibly
+applicable to our problem because we can bypass <em>all</em> collision detection A*
+invocations, which in theory will drastically reduce the computational load</p>
+
+<p>ORCA achieves collision avoidance in two steps –</p>
+
+<ol>
+  <li>
+    <p>calculating all agent-agent interactions and coming up with a characteristic
+velocity which avoids collisions</p>
+
+    <pre><code> f(a, b) -&gt; v
+</code></pre>
+  </li>
+  <li>
+    <p>given all such velocities, calculate a velocity for each agent that accounts
+for all potential upcoming collisions i.e., a fold operation</p>
+
+    <pre><code> g({v&lt;sub&gt;a&lt;/sub&gt;}) -&gt; v
+</code></pre>
+  </li>
+</ol>
+
+<p>When we apply these steps to all agents, we will get an agent <code>{a: v}</code> map,
+where there is a guarantee no collisions will occur if the agent sets their
+velocity to the prescribed output. What remains is to describe how these two
+steps actually work. We will focus on the characteristic collision avoidance
+velocity here, and leave the second step to a future post.</p>
+
+<p>Consider two agents that are currently moving towards each other.</p>
+
+<p><a name="figure-1"></a><img src="assets/orca_vo_agent_collision.png" alt="Agent Collision" /></p>
+
+<p>Figure 1: Two agents in position (p-)space heading towards one another.</p>
+
+<p>In order to determine if these two objects will collide, we can systematically
+construct a velocity obstacle (VO) object in velocity (v-)space (<a href="#figure-2">Figure
+2</a>). The VO object is defined by two fundamental properties –</p>
+
+<ol>
+  <li>
+    <p>the shape of the central blockage<sup id="fnref:1" role="doc-noteref"><a href="#fn:1" class="footnote" rel="footnote">1</a></sup> of the VO object, and</p>
+  </li>
+  <li>
+    <p>the coordinates of the center-of-mass of this blockage is away from the
+origin of v-space, which can be calculated from the relative velocities of the
+two objects.</p>
+  </li>
+</ol>
+
+<p>The shape of the central blockage is defined to be the set of all relative<sup id="fnref:2" role="doc-noteref"><a href="#fn:2" class="footnote" rel="footnote">2</a></sup>
+velocities between two objects which will result in collision, and the VO “cone”
+is built from extending a line from the origin to the edge of the blockage.</p>
+
+<p>Any <em>relative</em> velocity between the two objects that fall within this cone
+indicates that the two objects will collide at some point in the future,
+assuming the velocities stay constant.</p>
+
+<p><a name="figure-2"></a><img src="assets/orca_vo_collision_cone.png" alt="Collision Cone" /></p>
+
+<p>Figure 2: Velocity object between the two agents. The left figure demonstrates
+the intuitive construction of a velocity cone between two objects – here, we
+find the velocities of the bottom agent that will result in the two agents
+colliding. The right figure demonstrates a rough construction of the velocity
+obstacle object created by the agents in <a href="#figure-1">Figure 1</a>. Note that the
+circle here defines the characteristic “width” of the cone, and whose radius is
+proportional to r<sub>A</sub> + r<sub>B</sub>.</p>
+
+<p>We note that the distance from the v-space origin to the collision artifact
+(i.e. disc) is a function of time – that is, we will only achieve a collision if
+the velocity remains unchanged while the distance between the two agents
+shrinks. If our simulation time is very short (smaller than the time it would
+take to achieve collision) we should be able to proceed with the given velocity,
+even if it will <em>eventually</em> cause a collision. Thus, we can consider a
+<em>truncated</em> VO object, where the base of the circle has radius r<sub>0</sub> /
+𝜏, and 𝜏 is the simulation timestep. For example, if we set</p>
+
+<p>𝜏 = 1</p>
+
+<p>in <a href="#figure-2">Figure 2</a>, the base of the truncated VO object is just the solid
+circle, and the VO object points away from the origin. To reiterate, relative
+velocities between the two agents which fall inside this truncated cone will
+cause a collision within the next timestep.</p>
+
+<p>Given a VO cone, it becomes fairly simple to generate a velocity which will
+avoid collision – this is the projected normal vector <strong>u</strong> onto the edge of VO.
+Because the algorithm is <em>reciprocal</em>, we can assume<sup id="fnref:3" role="doc-noteref"><a href="#fn:3" class="footnote" rel="footnote">3</a></sup> the opposing agent will
+also move to avoid the collision – thus, we only need to alter the velocity of
+each agent by ||<strong>u</strong>||/2 (directed away from one another in p-space). Note
+<em>any</em> relative velocity outside the VO object will ensure the two agents will
+not collide – because of reasons<sup id="fnref:4" role="doc-noteref"><a href="#fn:4" class="footnote" rel="footnote">4</a></sup>, we narrow this search space to a
+half-plane<sup id="fnref:5" role="doc-noteref"><a href="#fn:5" class="footnote" rel="footnote">5</a></sup> ORCA<sub>A|B</sub> for agent A, which is orthogonal to <strong>u</strong> and
+passes through the minimally-adjusted velocity <strong>v<sub>A</sub></strong> + <strong>u</strong>/2 (see
+<a href="#figure-3">Figure 3</a>).</p>
+
+<p><a name="figure-3"></a><img src="assets/orca_vo_orca.png" alt="ORCA" /></p>
+
+<p>Figure 3: Construction of the ORCA half-plane of agent A given agent B. Note
+that <strong>u</strong> points to the closest point on the VO object from the relative
+velocity, and thus by definition is perpendicular to the surface of VO. Here,
+F(ORCA<sub>A|B</sub>) indicates the direction of the half-plane – that is, the
+region in v-space which are permissible velocities for agent A.</p>
+
+<p>We will leave discussion of how to use these ORCA planes to the next part.</p>
+
+<h2 id="works-cited">Works Cited</h2>
+
+<ul>
+  <li>
+    <p>van den Berg et al. “Reciprocal <em>n</em>-Body Collision Avoidance.” 2011.</p>
+  </li>
+  <li>
+    <p>Snape et al. “Reciprocal Collision Avoidance and Navigation for Video Games.”
+2012.</p>
+  </li>
+  <li>
+    <p>Sunshine-Hill, Ben. “RVO and ORCA: How They Really Work.” 2017.</p>
+  </li>
+  <li>
+    <p>Snape, James. <a href="https://github.com/snape/RVO2">snape/RVO2</a>. 2021.<sup id="fnref:6" role="doc-noteref"><a href="#fn:6" class="footnote" rel="footnote">6</a></sup></p>
+  </li>
+</ul>
+
+<h2 id="notes">Notes</h2>
+
+<div class="footnotes" role="doc-endnotes">
+  <ol>
+    <li id="fn:1" role="doc-endnote">
+      <p>For two circular agents, this is a disc. <a href="#fnref:1" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:2" role="doc-endnote">
+      <p>Velocity objects generally are constructed for non-relativistic agents,
+and the relative velocities are just the normal vector difference
+<strong>v<sub>A</sub></strong> - <strong>v<sub>B</sub></strong>. <a href="#fnref:2" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:3" role="doc-endnote">
+      <p>This is a configurable value – for example, we may make an agent with more
+mass less liable to change its own velocity. This can be done either
+implicitly, by refusing to alter the actual velocity of the more massive
+agent, at the cost of potential collisions if the timestep is too large, or
+by feeding the VO-generation library with a local weighting function (e.g.
+giving the more massive agent a weighted velocity change value of
+||<strong>u</strong>||/10, with the less massive agent moving the remainder
+9||<strong>u</strong>||/10). <a href="#fnref:3" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:4" role="doc-endnote">
+      <p><em>Why</em> we define this geometric object is due to math™, but more details
+can be found in van den Berg et al. <a href="#fnref:4" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:5" role="doc-endnote">
+      <p>Technically a hyperspace in N-dimensional ambient space (e.g. a half-space
+if our velocity vectors have a z-component). <a href="#fnref:5" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:6" role="doc-endnote">
+      <p>A lot of the work in our ORCA implemenation is based off of the official
+ORCA implementation under the Apache 2.0 license. We thank the original author
+for their work. <a href="#fnref:6" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+    
+  </section>
+
+  
+    
+      <div id="share">
+        Comment on <a href="https://www.reddit.com/r/DownFlux/comments/rk82tg/generating_velocity_obstacles_for_local_collision/">Reddit</a>.
+      </div>
+    
+
+    
+      
+
+
+  
+
+  <section>
+    <div id="post-footer">
+      <div id="post-footer-img-container" class="circular">
+        <div id="post-footer-img"
+             class="circular"
+             style="background-image: url(https://www.gravatar.com/avatar/9d7aad7d878f126cee5f4f9e1ea0975d?d=mm&size=200)">
+        </div>
+      </div>
+    </div>
+    <div id="post-footer-content">
+      <address>
+        <a href="https://blogzhang.com">Minke Zhang</a>
+      </address>
+      Minke is a software engineer based in the US. He enjoys running, climbing, photography, and banana-related facts. He works on DownFlux in his spare time.
+Minke prefers spaces over tabs in Python.
+    </div>
+  </section>
+
+
+
+    
+  
+
+</article>
+
+</main>
+
+
+  
+
+<footer>
+
+  
+    <div id="footer-nav-wrap">
+
+      <ul id="footer-nav">
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-twitter fa-fw"></span>
+              <a href="https://twitter.com/downfluxgame">
+                @downfluxgame
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-github fa-fw"></span>
+              <a href="https://github.com/downflux">
+                downflux
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-reddit fa-fw"></span>
+              <a href="https://reddit.com/r/downflux">
+                r/downflux
+              </a>
+            </li>
+          
+        
+      </ul>
+
+    </div>
+  
+
+  <div>
+    DownFlux &copy; 2021
+  </div>
+
+</footer>
+
+
+  <!--
+    Stops triggering CSS transitions on page load.
+    See https://stackoverflow.com/a/42969608.
+    -->
+  <script> </script>
+</body>
+
+</html>

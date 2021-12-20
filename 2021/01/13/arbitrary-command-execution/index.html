@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+  <title>DownFlux</title>
+  <meta name="description" content="" />
+
+  <meta name="HandheldFriendly" content="True" />
+  <meta name="MobileOptimized" content="320" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css" integrity="sha512-HK5fgLBL+xu6dm/Ii3z4xhlSUyZgTT9tuc/hSrtw6uzJOvgRr2a9jyxxT1ely+B+xFAmJKVSTbpM/CuL7qxO8w=="
+        crossorigin="anonymous" />
+
+  <!--
+    https://minicss.org/
+
+    TODO(minkezhang): Download and reference colors dynamically for tweaks.
+    -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/mini.css/3.0.1/mini-default.min.css">
+
+  
+    <link rel="stylesheet" href="/assets/css/tweaks.css" />
+  
+    <link rel="stylesheet" href="/assets/css/base.css" />
+  
+    <link rel="stylesheet" href="/assets/css/postimage.css" />
+  
+    <link rel="stylesheet" href="/assets/css/masonry.css" />
+  
+</head>
+
+<body>
+  <header class="sticky">
+
+  <a href="/"
+     class="logo">DownFlux
+  </a>
+
+  <a href="/"
+     class="button"><span class="fas fa-home fa-fw"></span> Home
+  </a>
+
+  <a href="https://github.com/downflux"
+     class="button">
+    <span class="fab fa-github fa-fw"></span> GitHub
+  </a>
+
+  <a href="/feed.xml"
+     class="button"><span class="fas fa-rss fa-fw"></span> RSS
+  </a>
+
+</header>
+
+
+  <main>
+  
+
+
+
+<article>
+
+  
+
+  
+    <h1>Arbitrary Command Execution</h1>
+  
+
+  
+    
+    
+
+    <section>
+      
+
+<div class="byline">
+
+  <div>
+    
+      
+      <address>Minke Zhang</address>
+    
+
+    <time class="post-date" datetime="2021-01-13">
+      13 Jan 2021
+    </time>
+  </div>
+
+  
+    <div>
+      
+
+      
+      
+
+      
+      
+
+      
+        <a href="/tag/design-doc">design doc</a>, <a href="/tag/server">server</a>, and <a href="/tag/commands">commands</a>
+      
+    </div>
+  
+
+</div>
+
+    </section>
+  
+
+  <section>
+    
+      <p>Scaling Complex Flows with FSM Metadata</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="text-align: left">Status</th>
+      <th style="text-align: left">final</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align: left">Author(s)</td>
+      <td style="text-align: left">minke.zhang@gmail.com</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Contributor(s)</td>
+      <td style="text-align: left">bleh777777777777@gmail.com</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Last Updated</td>
+      <td style="text-align: left">2021-01-12</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="background">Background</h2>
+
+<p>DownFlux is a real-time strategy game which potentially requires a wide
+variety of state-mutating flows. Because both the state and the flows are
+complex, we need a formal framework to describe the work that needs to be done
+to change the state. In a world where we add ad hoc state mutations, we will
+very quickly see the pains of a complex chain of code without a clear debug
+entry point.</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>We will break any given state mutation into two parts – a command metadata
+object, and a command executor. The metadata describes the overall command,
+exposes a specific subset of the game state, and tracks the work that is
+currently being done and will need to be done. The metadata may hold a
+reference to a child command metadata struct as well.</p>
+
+<p>On every game tick, the executor object queries the metadata for what work (if
+any) needs to be done. The metadata queries only its internal references –
+notably, this is a read-only operation; the metadata object does not have
+authority to mutate state on its own. If the metadata signals to the executor
+that work needs to be done, the excutor will then explicitly mutate both the
+game and metadata object as appropriate.</p>
+
+<h2 id="detailed-design">Detailed Design</h2>
+
+<p><img src="assets/fsm_visitor.png" alt="FSM / Visitor relationship diagram" /></p>
+
+<p><a name="figure-1">Figure 1</a>: FSM / Visitor relationship diagram.</p>
+
+<h3 id="game-state">Game State</h3>
+
+<p>The game state represents the totality of game data. This state may include
+game entities e.g. tank instances, the curves representing an entity property
+over time, as well as any other general data e.g. server status, the current
+game tick, etc.</p>
+
+<p>A subset of the game state is broadcast per tick to all connected clients.</p>
+
+<h3 id="fsm-command-metadata">FSM (Command Metadata)</h3>
+
+<p>A command is represented with a finite state machine with a fully defined
+transition graph. For example, the move command consists of the <code>PENDING</code>,
+<code>EXECUTING</code>, <code>FINISHED</code>, and <code>CANCELED</code> states, with transitions</p>
+
+<pre><code>PENDING → EXECUTING
+PENDING → FINISHED
+PENDING → CANCELED
+</code></pre>
+
+<p>This command will have references to the underlying game state as part of the
+data struct, e.g.</p>
+
+<pre><code>type MoveCommand struct {
+  serverStatus        *Status
+  positionCurve       Curve
+  nextPartialMoveTick float64
+}
+</code></pre>
+
+<p>The command may offer a set of utility functions to mutate the referenced
+subset of the game state, or its own internal state
+(e.g. <code>nextPartialMoveTick</code>), but <em>must not mutate itself</em>. The command manager
+must manually make the mutations.</p>
+
+<h4 id="virtual-state-transitions">Virtual State Transitions</h4>
+
+<p>The command metadata will be used to calculate the “real” state of the command
+at any given point in time – if we schedule a move command to occur ten ticks
+in the future, we want to make sure the command itself knows when it needs to
+execute. This alleviates processing logic that otherwise will need to be
+handled by the iterator examining the commands (which in our case is the move
+visitor).</p>
+
+<p>See
+<a href="https://blog.kevmo314.com/time-invariant-finite-state-machines.html">Time Invariant Finite State Machines</a>
+for more details.</p>
+
+<h4 id="api">API</h4>
+
+<h5 id="func-c-command-id-id">func (c Command) ID() ID</h5>
+
+<p>The command may need to generate a UUID at init time – this ID will be used to
+check for duplicates of the command, and for calculating what commands of the
+same type may conflict with one another, e.g. two move commands on the same
+unit.</p>
+
+<h5 id="func-c-command-acceptv-visitor-error">func (c Command) Accept(v Visitor) error</h5>
+
+<p>A command must allow an entry point for the visitor. This is part of the
+<a href="https://en.wikipedia.org/wiki/Visitor_pattern">standard visitor pattern</a> API.</p>
+
+<h5 id="func-c-command-state-state-error">func (c Command) State() (State, error)</h5>
+
+<p>A command will return its current, <em>virtual</em> (i.e. calculated) state. This will
+be used by the caller to determine what actions (if any) should be taken at the
+current point in time.</p>
+
+<h5 id="func-c-command-tostate-error">func (c Command) To(State) error</h5>
+
+<p>A command will surface a way to transition between different states in the
+internal FSM. This function will error out if there is no valid transition path
+from the current internal virtual state to the target.</p>
+
+<h5 id="func-c-command-precedenced-command-bool">func (c Command) Precedence(d Command) bool</h5>
+
+<p>A command must know if it may be superseded by another higher-priority command.
+This function returns <code>true</code> if the input Command arg is of lower priority
+(i.e. “c preceded d”).</p>
+
+<h4 id="chaining-fsms">Chaining FSMs</h4>
+
+<p><img src="assets/fsm_chaining.png" alt="Chaining FSMs" /></p>
+
+<p><a name="figure-2">Figure 2</a>: Chaining FSMs; note that a visitor may queue
+additional dependent flows, but never accesses the dependent FSM itself, nor
+the dependent flow visitor.</p>
+
+<p>The command may be a part of a larger, more intricate chain of commands – an
+attack-move command consists of both chasing a target and actually attacking
+when the target is within range. This is a valid pattern.</p>
+
+<p>The parent command in this case may also need to expose an API endpoint to
+allow the visitor to change this reference. In our implementation of the Chase
+visitor, we regularly cancel and replace the referenced Move command with a
+new destination – this pointer is set via</p>
+
+<pre><code class="language-golang">func (c ChaseCommand) SetMove(m MoveCommand) error
+</code></pre>
+
+<p>See <a href="#figure-2">Figure 2</a> for more details.</p>
+
+<h5 id="example">Example</h5>
+
+<p>Consider our Attack command; logically, we have a background task in which the
+attacker constantly chases the target; if the target is within attack range,
+we then signal to the Visitor this step is ready to execute</p>
+
+<pre><code class="language-golang">// Simplified API for brevity.
+func (c *AttackCommand) Status() Status {
+  if c.chaseCommand.Status() == CANCELED {
+    return CANCELED
+  }
+  if d(
+    c.source.Position(),
+    c.destination.Position()) &lt; c.source.AttackRange() &amp;&amp; (
+      c.source.OffAttackCooldown()) {
+    return EXECUTING
+  }
+  return PENDING
+}
+</code></pre>
+
+<h3 id="fsm-list">FSM List</h3>
+
+<p>An FSM list will keep track of all commands of a specific type (e.g. all Move
+commands). This list may be mutated by an arbitrary visitor (e.g. when a Chase
+visitor needs to spawn in a new Move command). The default access pattern is
+provided via the <code>Accept</code> function.</p>
+
+<p>N.B.: Technically this may be implemented as a simple slice, but our underlying
+implementation uses a map struct instead for fast queries.</p>
+
+<h4 id="api-1">API</h4>
+
+<h5 id="func-l-list-clear-error">func (l List) Clear() error</h5>
+
+<p>At the beginning of a game tick, the list will be required to delete any
+references to <code>FINISHED</code> or <code>CANCELED</code>-state commands.</p>
+
+<p>Any dependent commands which have references to these deleted commands will
+still have access to the data structs – in our Golang implementation, the
+underlying memory is not freed until the last reference is deleted.</p>
+
+<h5 id="func-l-list-mergem-list-error">func (l List) Merge(m List) error</h5>
+
+<p>Our engine implementation keeps two lists per command type – one for incoming
+user requests (the “cache”), and one as our source of truth (“source”). At the
+beginning of the game tick, after the source deletes canceled and finished
+commands, the cache will be merged into the source.</p>
+
+<p>This merge may cancel some commands in the source, as user commands take
+priority; in this case, we will delete the reference to the canceled command,
+and replace it with the new user command. As in the case of the <code>Clear()</code>
+function, the chained command(s) will still have access to the data of the
+deleted command.</p>
+
+<h5 id="func-l-list-appendc-command-error">func (l List) Append(c Command) error</h5>
+
+<p>The list will expose a generic way to add a new command.</p>
+
+<h5 id="func-l-list-acceptv-visitor-error">func (l List) Accept(v Visitor) error</h5>
+
+<p>The list will also be exposed to the visitor – this function usually only acts
+as an iterator wrapper around the tracked commands. Commands here may be
+mutated serially or concurrently, depending on the list implementation.</p>
+
+<h4 id="merge">Merge</h4>
+
+<p><img src="assets/fsm_list_merge.png" alt="FSM List Merge" /></p>
+
+<p><a name="figure-3">Figure 3</a>: FSM List merge operation.</p>
+
+<p>As stated above, for each command type, we keep two FSM list instances. The
+cache is used for keeping track of client (e.g. player) input, while the
+source is used to keep track of the actual work items that need to be done.
+After we clear the stale commands from the source list, we will then merge in
+the cache – this allows us to atomically schedule the client input, and to
+override existing commands in the queue.</p>
+
+<h3 id="visitors">Visitors</h3>
+
+<p>The visitor is our execution phase in the game. As stated above, this is the
+standard visitor of the visitor pattern; however, the key difference here is
+that while many references to this pattern uses the visitor to mutate actual
+objects (game entities in our case), we have opted for an additional layer of
+indirection, and have the visitors mutate the <em>metadata</em> instead. This allows
+us to have the opportunity to have a formalized definition for each command
+type, and greatly increases the scalability of our game as we add more and more
+commands to the execution model.</p>
+
+<h4 id="api-2">API</h4>
+
+<h5 id="func-v-visitor-visit-a-agent-error">func (v Visitor) Visit (a Agent) error</h5>
+
+<p>The Visitor mutates the game state and the underlying command via the <code>Visit()</code>
+function. This function generally</p>
+
+<ol>
+  <li>queries the command’s <code>State()</code>, and</li>
+  <li>decide what action to take based on the returned value.</li>
+</ol>
+
+<p>For example, the Move visitor will do a no-op if the Move command returns any
+state other than <code>EXECUTING</code>. In the <code>EXECUTING</code> phase, the visitor will</p>
+
+<ol>
+  <li>calculate a partial path for the entity,</li>
+  <li>update the entity curve, and</li>
+  <li>schedule when the next partial move should be calculated (via
+<code>MoveCommand.SchedulePartialMove(float64)</code>).</li>
+</ol>
+
+<h4 id="chaining-commands">Chaining Commands</h4>
+
+<p>It is in the Visitor that any dependent flows for the visitor-specific command
+may be generated – e.g. the newly-created Move commands that make up the
+Chase-chain are created here.</p>
+
+<p>In the case the visitor needs to create new commands, <em>the visitor will need a
+reference to the associated FSM List of the dependent command type</em>. The
+visitor is responsible for scheduling the newly created command, and will
+schedule the command in the <em>source of truth</em>, not the cache.</p>
+
+<p>See <a href="#figure-2">Figure 2</a>; note that Visitor<sub>B</sub> does not have a data
+dependency on FSM<sub>A</sub> – setting this limitation greatly simplifies
+the separation of responsibilities between the visitor and the command
+metadata, and should allow for more scalability.</p>
+
+<p>Also note that although we have said FSMs are read-only, there is a read-write
+dependency from FSM<sub>B</sub> to FSM<sub>A</sub>. This write operation is
+just a <code>Command.To(CANCELED)</code> call in case we need to halt the operation, and
+should not be any other mutation.</p>
+
+<h5 id="example-1">Example</h5>
+
+<p>For our Attack command defined above, our visitor would query for the state,
+and mutate the game state:</p>
+
+<pre><code class="language-golang">// Simplified API for brevity.
+func (v *AttackVisitor) Visit(c *AttackCommand) error {
+  if c.Status() != EXECUTING { return nil }
+  if c.Status() == EXECUTING {
+    c.Source().Attack()
+    c.Target().Damage(c.Source().Strength())
+    v.dirtyState.Add(c.Source(), c.Target())
+  }
+}
+</code></pre>
+
+<p>Note that neither the Attack command nor the visitor modifies the dependent
+Chase flow - this independent execution of commands is crucial for scalability.</p>
+
+<h4 id="dirty-state">Dirty State</h4>
+
+<p>In the case the Visitor updates the game state via a curve, or creates a new
+entity, it is responsible for updating the game’s dirty state list. This list
+keeps track of the broadcastable data per tick, and is reset at the beginning
+of every game tick. For more information, see the design doc.</p>
+
+<h2 id="work-estimates">Work Estimates</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Work Item</th>
+      <th>Time Estimate</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>implement FSM interface</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement Move FSM</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement Produce FSM</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement Chase FSM</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement Attack FSM</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement Move Visitor</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement Produce Visitor</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement Chase Visitor</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement Attack Visitor</td>
+      <td>1 week</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement Client Move API</td>
+      <td>1 day</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement Client Produce API</td>
+      <td>1 day</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>implement Client Attack API</td>
+      <td>1 day</td>
+      <td>DONE</td>
+    </tr>
+    <tr>
+      <td>demonstrate feasibility</td>
+      <td>N/A</td>
+      <td>DONE</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="see-also">See Also</h2>
+
+<ul>
+  <li><a href="https://blog.kevmo314.com/time-invariant-finite-state-machines.html">Time Invariant Finite State Machines</a></li>
+</ul>
+
+    
+  </section>
+
+  
+    
+      <div id="share">
+        Comment on <a href="https://www.reddit.com/r/DownFlux/comments/kwdi93/downflux_command_design_doc/">Reddit</a>.
+      </div>
+    
+
+    
+      
+
+
+  
+
+  <section>
+    <div id="post-footer">
+      <div id="post-footer-img-container" class="circular">
+        <div id="post-footer-img"
+             class="circular"
+             style="background-image: url(https://www.gravatar.com/avatar/9d7aad7d878f126cee5f4f9e1ea0975d?d=mm&size=200)">
+        </div>
+      </div>
+    </div>
+    <div id="post-footer-content">
+      <address>
+        <a href="https://blogzhang.com">Minke Zhang</a>
+      </address>
+      Minke is a software engineer based in the US. He enjoys running, climbing, photography, and banana-related facts. He works on DownFlux in his spare time.
+Minke prefers spaces over tabs in Python.
+    </div>
+  </section>
+
+
+
+    
+  
+
+</article>
+
+</main>
+
+
+  
+
+<footer>
+
+  
+    <div id="footer-nav-wrap">
+
+      <ul id="footer-nav">
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-twitter fa-fw"></span>
+              <a href="https://twitter.com/downfluxgame">
+                @downfluxgame
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-github fa-fw"></span>
+              <a href="https://github.com/downflux">
+                downflux
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-reddit fa-fw"></span>
+              <a href="https://reddit.com/r/downflux">
+                r/downflux
+              </a>
+            </li>
+          
+        
+      </ul>
+
+    </div>
+  
+
+  <div>
+    DownFlux &copy; 2021
+  </div>
+
+</footer>
+
+
+  <!--
+    Stops triggering CSS transitions on page load.
+    See https://stackoverflow.com/a/42969608.
+    -->
+  <script> </script>
+</body>
+
+</html>

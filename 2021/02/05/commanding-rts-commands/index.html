@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+  <title>DownFlux</title>
+  <meta name="description" content="" />
+
+  <meta name="HandheldFriendly" content="True" />
+  <meta name="MobileOptimized" content="320" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css" integrity="sha512-HK5fgLBL+xu6dm/Ii3z4xhlSUyZgTT9tuc/hSrtw6uzJOvgRr2a9jyxxT1ely+B+xFAmJKVSTbpM/CuL7qxO8w=="
+        crossorigin="anonymous" />
+
+  <!--
+    https://minicss.org/
+
+    TODO(minkezhang): Download and reference colors dynamically for tweaks.
+    -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/mini.css/3.0.1/mini-default.min.css">
+
+  
+    <link rel="stylesheet" href="/assets/css/tweaks.css" />
+  
+    <link rel="stylesheet" href="/assets/css/base.css" />
+  
+    <link rel="stylesheet" href="/assets/css/postimage.css" />
+  
+    <link rel="stylesheet" href="/assets/css/masonry.css" />
+  
+</head>
+
+<body>
+  <header class="sticky">
+
+  <a href="/"
+     class="logo">DownFlux
+  </a>
+
+  <a href="/"
+     class="button"><span class="fas fa-home fa-fw"></span> Home
+  </a>
+
+  <a href="https://github.com/downflux"
+     class="button">
+    <span class="fab fa-github fa-fw"></span> GitHub
+  </a>
+
+  <a href="/feed.xml"
+     class="button"><span class="fas fa-rss fa-fw"></span> RSS
+  </a>
+
+</header>
+
+
+  <main>
+  
+
+
+
+<article>
+
+  
+
+  
+    <h1>Commanding RTS Commands</h1>
+  
+
+  
+    
+    
+
+    <section>
+      
+
+<div class="byline">
+
+  <div>
+    
+      
+      <address>Minke Zhang</address>
+    
+
+    <time class="post-date" datetime="2021-02-05">
+      05 Feb 2021
+    </time>
+  </div>
+
+  
+    <div>
+      
+
+      
+      
+
+      
+      
+
+      
+        <a href="/tag/fsm">FSM</a>, <a href="/tag/visitor-pattern">visitor pattern</a>, and <a href="/tag/commands">commands</a>
+      
+    </div>
+  
+
+</div>
+
+    </section>
+  
+
+  <section>
+    
+      <p>Scaling State Mutations via FSM Visitors</p>
+
+<p><em>DownFlux is a real-time strategy game in active development at
+<a href="https://github.com/downflux">github.com/downflux</a>. The goal of this project is
+simply to learn and have fun. I have several years of professional software
+development experience, none of which is in the game industry. This document
+does not advocate a general form solution for all state mutation problems, but
+rather demonstrates a different view of the command pattern. For a more
+technical and detailed overview of this approach, take a look at the <a href="https://blog.downflux.com/2021/01/13/arbitrary-command-execution/">design
+doc</a>.</em></p>
+
+<p><em>I mix first person plural in this document liberally because it sounds awkward
+to keep saying “I” all the time, not because I’m royalty.</em></p>
+
+<h2 id="abstract">Abstract</h2>
+
+<p>A major problem we’re facing while working on DownFlux has been finding a
+scalable approach to state mutations. Scalability here represents the ability
+for us to remain agile when implementing new mutation flows – this encompasses
+general good software development guidelines like testability, code “fragrance”
+(i.e. lack of smell), and framework flexibility.</p>
+
+<p>Our model of a mutation flow consists of a command scheduler object, housing a
+metadata object per distinct flow invocation. These metadata objects are a thin
+wrapper around a finite state machine (FSM), and exposes a minimal subset of the
+game state to a visitor object.</p>
+
+<p>Our metadata objects may only call read-only queries to the game state, and
+returns a calculated state to the visitor. The visitor may invoke write
+operations on both the metadata and the underlying state.</p>
+
+<p>See a snapshot of our
+<a href="https://github.com/downflux/game/tree/8fbaefebcb31d5f59796c6285595ccda544dc02f">repo</a>
+for more details. Feel free to reach out on
+<a href="https://reddit.com/r/downflux">Reddit</a> or
+<a href="https://twitter.com/downfluxgame">Twitter</a> with questions or comments.</p>
+
+<h2 id="jargon">Jargon</h2>
+
+<ul>
+  <li>state mutations, flows, commands: a series of changes to the game state (e.g.
+map, entities, etc.) which achieve a specific end-goal (e.g. <code>move</code>)</li>
+</ul>
+
+<h3 id="flow-examples">Flow Examples</h3>
+
+<ul>
+  <li><code>move(source, dest)</code>: move the source object to the destination location.</li>
+  <li><code>chase(source, target)</code>: series of serialized moves, which are updated as the
+destination object moves.</li>
+  <li><code>attack(source, target)</code>: chase target asynchronously; if target is within
+attack range and the source can attack (off cooldown), then commit state
+change.</li>
+</ul>
+
+<h2 id="an-ad-hoc-approach">An ad hoc Approach</h2>
+
+<p>The first attempt we made at implementing a state mutation “framework” skipped
+any consideration of scalability or maintainability for the sake of an MVP. Here
+is our single <code>move</code> command:</p>
+
+<pre><code class="language-golang">func (s *Server) doTick() {
+  for {
+    for c := range s.Commands() {
+      // Client calls mutate this CommandQueue object by appending
+      // pending commands.
+      c.Execute(s.q[c.Type()])
+    }
+  }
+}
+
+type Command interface {
+  Execute(args interface{}) error
+  Type() CommandType
+}
+
+func (c *MoveCommand) Execute(args interface{}) error {
+  a = args.(MoveCommandArg)
+
+  // p is a list of Position objects (i.e. (x, y) tuples).
+  p = c.map.GetPath(a.Source.Location.Get(a.Tick), a.Destination)
+
+  // Source merges the positions with internal velocity in
+  // the curve.
+  a.Source.Location.Update(p)
+  return nil
+}
+</code></pre>
+
+<p><a name="figure-1"></a>Figure 1: Simple implementation of the <code>move</code> command.</p>
+
+<p>Yup. This moves things. How do we start overengineer this?</p>
+
+<p>Our second order approximation takes into consideration <code>GetPath</code> is expensive
+– we’re making a full A* search. But in an RTS game, it is very often the case
+that the player direct units to a different location before the unit reaches the
+target, wasting a lot of compute cycles.<sup id="fnref:1" role="doc-noteref"><a href="#fn:1" class="footnote" rel="footnote">1</a></sup> Therefore, we want to calculate and
+set a partial trajectory instead, with delayed execution of the rest of the
+path.<sup id="fnref:2" role="doc-noteref"><a href="#fn:2" class="footnote" rel="footnote">2</a></sup></p>
+
+<p><img src="assets/scaling_commands_partial_move.png" alt="Partial Move DAG" /></p>
+
+<p><a name="figure-2"></a>Figure 2: Partial path diagram. The command should only
+calculate p<sub>0</sub> first; at some time t in the future, recalculate the
+path (which may involve further sub-path iterations).</p>
+
+<p>With the partial path logic, our command now looks something like this:<sup id="fnref:3" role="doc-noteref"><a href="#fn:3" class="footnote" rel="footnote">3</a></sup></p>
+
+<pre><code class="language-golang">func (s *Server) doTick() {
+  for var args := range s.q {
+    c.Execute(curTick, args)
+  }
+}
+
+// Called by client API as well as internally.
+func (c *MoveCommand) Schedule(
+  t Tick,
+  e Entity,
+  d Destination) error {
+
+  scheduledAction := c.q.Get(e)
+  if scheduledAction != nil &amp;&amp; scheduledAction.Precedence(t) {
+    c.q.Set(t, e, d)
+  }
+}
+
+func (c *MoveCommand) Execute(t Tick, args interface{}) {
+  const pathLen int = 10;
+  var arg := args.(MoveCommandArg)
+
+  // Return a path of a specific length instead.
+  p = c.Map.GetPath(
+    arg.Source.Location.Get(t),
+    arg.Destination,
+    pathLen,
+  )
+
+  arg.Source.Location.Update(p)
+
+  // Schedule partial path execution if the last element of the path is not
+  // the "true" destination. c.Schedule() also needs to calculate if there are
+  // any existing commands that need to be overwritten.
+  if p[len(p) - 1] != arg.Destination {
+    c.Schedule(
+      t + a.Source.CalculateTravelTime(p),
+      arg.Source,
+      arg.Destination)
+  } else {
+    c.Delete(arg)
+  }
+}
+</code></pre>
+
+<p><a name="figure-3"></a>Figure 3: Toy <code>move</code> command implementation v2 – here we
+enqueue a delayed move command into the main queue. This queue may have client-
+or other server-initiated command scheduling, so when we update the queue, we
+need to ensure there is a single, canonical execution flow; this logic is packed
+into the <code>Schedule()</code> function, meaning <strong>a single command will need to know the
+implementation logic / hierarchy of all other commands</strong>.</p>
+
+<p>Kind of a pain, but still doable.</p>
+
+<p>This model worked well enough for us to get a rudimentary frontend client
+running; however, a gut check seems to indicate major scalability issues with
+this approach.<sup id="fnref:4" role="doc-noteref"><a href="#fn:4" class="footnote" rel="footnote">4</a></sup> In particular,</p>
+
+<ol>
+  <li>A command may act on multiple entity types, and an entity may have multiple
+  mutation flows – the implementations so far already demonstrates this
+  vulnerability IMO.</li>
+  <li>Because the command queue contains commands from all command implementations
+  (i.e. <code>move</code>, <code>attack</code>, etc.) and the command may mutate the queue (e.g.
+  partial move enqueues), the command must know the details of all siblings
+  flows.</li>
+  <li>The command must manually check the global state each time it is invoked, e.g.
+  if the source has reached the destination. It is unclear how each command will
+  implement this state read, which will impede maintainability.</li>
+  <li><code>Command.Execute()</code> read and writes to the global state; from our simple move
+  example, this already seems like a testability nightmare and needs to be
+  addressed.</li>
+</ol>
+
+<p>A common theme to these issues is the broad scope and authority we have
+conferred upon the command object; how can we clamp down on this?</p>
+
+<h2 id="an-accidental-tour-de-entities">(An Accidental) Tour de Entities</h2>
+
+<p>The first concern seems like a classic double dispatcher problem between the
+command and the entities (e.g. tanks) that they mutate. This seems to suggest we
+should break out the command into a
+<a href="https://en.wikipedia.org/wiki/Visitor_pattern">visitor pattern</a> implementation.</p>
+
+<pre><code class="language-golang">func (s *Server) doTick() {
+  for var v := range s.Commands() {
+    for var e := range s.Entities {
+      e.Accept(v)
+    }
+  }
+}
+
+func (e *EntityImpl) Accept(v Visitor) { v.Visit(e) }
+
+func (c *MoveCommand) Visit(e Entity) {
+    if !e.IsMoveable() { return }
+
+    if c.q.Has(e) {
+      // This is the same implementation as in [Figure 3](#figure-3).
+      c.Execute(c.Status.CurrentTick(), ...)
+    }
+}
+</code></pre>
+
+<p><a name="figure-4"></a>Figure 4: The architectural change counterpart to the
+changes made in <a href="#figure-3">Figure 3</a>.</p>
+
+<p>There are some flaws here.</p>
+
+<ol>
+  <li>The <code>Acceptor</code> object is a single game entity – this is not abstract enough.
+  Consider the <code>attack</code> command which mutates both the attacker and target –
+  how do we visit target in an <code>AttackCommand</code>? Do we need a
+  <code>DealDamageVisitor</code>? If so, suggests we will need a message broker between
+  attacking and taking damage, which seems unnecessarily overwrought.</li>
+  <li>The command still has to deal with the schedule (<code>c.q</code>), which is a <em>global
+  mutatable state</em>. As mentioned in <a href="#figure-2">Figure 2</a>, the schedule may be
+  edited by both sides of the network divide, and having our command dealing
+  with that logic directly seems messy.</li>
+</ol>
+
+<p>Note that <strong>this refactor was actually useless in terms of reducing tech debt</strong>,
+but was very important in exposing the points of friction that we will need to
+address.</p>
+
+<h2 id="finite-state-metadata">Finite State Metadata</h2>
+
+<p>Let’s examine the first concern above, where we’re dealing with pain points
+brought up by iterating over the entities themselves in a command. Because we’re
+visiting the entity, that means any broader details about the execution
+(including e.g. partial move cached data) still need to be managed by the
+command object:</p>
+
+<pre><code class="language-golang">type MoveCommand struct {
+  // Reference to global state.
+  q []MoveCommandArg
+  ...
+}
+
+func (c *MoveCommand) Visit(e Entity) {
+  if c.q.Has(e, ...) { ... }  // See [Figure 4](#figure-4)
+  ...
+}
+</code></pre>
+
+<p>This seems inefficient – why are we accepting a non-scheduled entity as valid
+input? In fact, our first approach was probably closer to the mark – let’s just
+pass the command metadata as input instead!</p>
+
+<pre><code class="language-golang">func (c *MoveCommand) Visit(m MoveCommandArg) { ... }
+</code></pre>
+
+<p>One key difference between this and our initial implementation is how we’re
+approaching the metadata object here – we’re promoting the metadata into a
+“real” data struct, and as such, we need to consider the exported metadata API.
+What does a command need from the metadata?</p>
+
+<p>In the case of <code>move</code> (with partial implementation), we need to track when the
+next iteration of partial paths need to be calculated. Seems like a job for an
+FSM!</p>
+
+<pre><code class="language-golang">type CommandMetadata interface {
+  Status() FSMState
+  Transitions() map[FSMState]FSMState
+
+  // Used to determine which command needs to be canceled.
+  Precedence(o CommandMetadata) bool
+
+  // Triggered by Schedule or a Command.
+  Cancel()
+}
+
+// MoveCommandArg will implement the CommandMetadata interface.
+type MoveCommandArg struct {
+  scheduledTick Tick
+  source        Moveable
+  destination   Position
+}
+</code></pre>
+
+<p><a name="figure-5"></a>Figure 5: Expanded <code>MoveCommandArg</code> type from
+<a href="#figure-1">Figure 1</a>.</p>
+
+<p>Where the FSM DAG for <code>MoveCommandArg</code> is as follow:</p>
+
+<p><img src="assets/scaling_commands_move_dag.png" alt="Move DAG" /></p>
+
+<p><a name="figure-6"></a>Figure 6: <code>move</code> state diagram.</p>
+
+<p>The most straightforward way to link this into <code>MoveCommand.Visit()</code> looks
+something like this:</p>
+
+<pre><code class="language-golang">func (c *MoveCommand) Visit(m *MoveCommandArg) {
+  if m.Tick() == curTick {
+    m.SetStatusOrDie(EXECUTING)
+  }
+  if m.Status() == EXECUTING {
+    p = c.Map.GetPath(..., pathLen)
+    ...
+
+    // Need to schedule next iteration.
+    if m.Destination() != p[len(p) - 1] {
+      m.SetTick(...)
+      m.SetStatusOrDie(PENDING)
+    }  
+  }
+  if m.Source().Location(curTick) == m.Destination() {
+    m.SetStatusOrDie(FINISHED)
+  }
+}
+</code></pre>
+
+<p><a name="figure-7"></a>Figure 7: <code>move</code> implementation with partial paths and
+FSM metadata inputs.</p>
+
+<p>This seems cleaner than what we had before! We have a formal FSM structure
+validating the partial command action being executed. Additionally, because
+we’re passing a reference to the metadata object into <code>Visit()</code>, we can migrate
+the schedule away from the command.</p>
+
+<p>This still seems a bit messy though, when we have to call <code>SetStatusOrDie</code> so
+many times. Is there a way we can not do that?</p>
+
+<p>(Yes.)</p>
+
+<h3 id="read-only-fsms">Read-Only FSMs</h3>
+
+<p>We observe that the state of an FSM is an explicit representation of the
+underlying system. <em>It does not matter how we calculate this state!</em> In
+<a href="#figure-7">Figure 7</a>, we “calculated” the state by storing it as an internal
+variable via <code>SetStatusOrDie()</code>, but we can also <em>treat the state as a generic
+read-only operation on the system</em>.</p>
+
+<p>As an example, let’s consider the state diagram of the <code>move</code> command:<sup id="fnref:5" role="doc-noteref"><a href="#fn:5" class="footnote" rel="footnote">5</a></sup></p>
+
+<ul>
+  <li><code>FINISHED</code>: A <code>move</code> command is finished if the source entity has arrived at
+the given destination.</li>
+  <li><code>PENDING</code>: If the internal <code>m.scheduledTick</code> does not equal the current tick,
+the command is not yet ready to execute; this accounts for both when the
+source is already moving, or still needs to calculate the next partial move.</li>
+  <li><code>EXECUTING</code>: If <code>m.ScheduledTick</code> equals current game tick, the command needs
+to take action and actually calculate the path of the object. At the end of
+the execution phase, the scheduled tick should be updated.</li>
+  <li><code>CANCELED</code>:<sup id="fnref:6" role="doc-noteref"><a href="#fn:6" class="footnote" rel="footnote">6</a></sup> An externally triggered transition if e.g. the client
+specifies another move command in the meantime. This may need to be explicitly
+set.</li>
+</ul>
+
+<p>So in code form, this looks something like this:</p>
+
+<pre><code class="language-golang">// MoveCommandArg will implement the CommandMetadata interface.
+type MoveCommandArg struct {
+  scheduledTick Tick
+  isCanceled    bool
+
+  // References the actual game state.
+  status        *TickStatus  // Exports CurrentTick().
+  source        Moveable
+  destination   Position
+}
+
+func (m *MoveCommandArg) Status() FSMStatus {
+  if m.isCanceled == CANCELED { return CANCELED }
+  if m.source.Location.Get(m.status.CurrentTick()) == m.destination {
+    return FINISHED
+  }
+  if m.scheduledTick == status.CurrentTick() {
+    return EXECUTING
+  }
+  return PENDING
+}
+
+func (c *MoveCommand) Visit(m MoveCommandArg) {
+  if m.Status() == EXECUTING {
+    ...
+    m.SetScheduledTick(...)
+  }
+}
+</code></pre>
+
+<p><a name="figure-8"></a>Figure 8: Toy implementation of the <code>move</code> command with
+smart metadata objects.</p>
+
+<p>By making the metadata a bit smarter, we’ve greatly reduced the burden on the
+execution logic. Note that the metadata object itself is <strong>read-only</strong> – we are
+ensuring that only the command object has the ability to write to the game
+state, as well as to the metadata object (e.g. <code>SetScheduledTick()</code>). Our server
+tick logic currently looks like this:</p>
+
+<pre><code class="language-golang">func (s *Server) doTick() {
+  for var v := range s.Visitors() {
+    for var q := range s.q[v.Type()] {
+      // It is up to each metadata list to decide if it may be run in parallel
+      // or not.
+      q.Accept(v)
+    }
+  }
+}
+</code></pre>
+
+<p>To pause a second, here is what our infrastructure looks like at the moment:</p>
+
+<p><img src="https://blog.downflux.com/2021/01/13/arbitrary-command-execution/assets/fsm_visitor.png" alt="FSM Visitor DAG" /></p>
+
+<p><a name="figure-9"></a> Figure 9: FSM / Visitor relationship diagram. The dirty
+state component is outside the scope of this blog post, but is explained in the
+<a href="https://blog.downflux.com/2021/01/13/arbitrary-command-execution/">design doc</a>.</p>
+
+<h2 id="two-pass-scheduler">Two-Pass Scheduler</h2>
+
+<p>The other friction point we had was with regards to the complexity of having the
+command pushing into a two-way schedule (i.e., one that is directly mutated by
+both the client and server). We need a way to control the timing of when
+schedule mutations are made.</p>
+
+<p>Our solution to this problem was to implement a client-only schedule object
+which is used as a scratchpad for incoming requests. At the beginning of each
+tick, we merge this into our actual source-of-truth schedule:</p>
+
+<pre><code class="language-golang">type Schedule interface {
+  Append(t VisitorType, m CommandMetadata)
+  RemoveCanceledAndFinished()
+
+  // Requires CommandMetadata to implement Precedence().
+  Merge(o Schedule)
+}
+
+func (s *Server) doTick() {
+  s.q.RemoveCanceledAndFinished()
+  s.q.Merge(s.clientSchedule)
+
+  for var v := range s.Visitors() { ... }
+}
+</code></pre>
+
+<p><a name="figure-10"></a>Figure 10: Two-pass schedule implementation.</p>
+
+<p>This ensures when commands are running, the command has exclusive write access
+to the schedule – since only instances of the same command are executing at the
+same time, reasoning about concurrency becomes greatly simplified.</p>
+
+<h2 id="conclusions">Conclusions</h2>
+
+<p>An interesting tangent: a core application of the visitor pattern is for a
+double-dispatch table; however, note that we have a strict one-to-one
+relationship between a single <code>CommandMetadata</code> implementation and a command.
+There is no double dispatch here.</p>
+
+<p>However, the <em>reason</em> why a visitor pattern is good when solving for the
+double-dispatch is because it forces a decoupling of the underlying data object
+from the mutations. It is our good fortune that we chose to view the problem
+through this lens, even if we originally applied the pattern inappropriately.</p>
+
+<p>If we wished, we can migrate back to using a simple for loop to call the
+commands, as we originally did, but safe in the knowledge that we have arrived
+at a scalable approach to building state mutation flows.</p>
+
+<pre><code class="language-golang">func (s *Server) doTick() {
+  ...
+  for var c := range s.Commands() {
+    for var m := range s.q[c.GetType()] {
+      // If the command wants to run serially, it may employ a class-level lock
+      // on Execute().
+      go c.Execute(m)
+    }
+    // Wait for all invocations to return before continuing to next command.
+    ...
+  }
+}
+</code></pre>
+
+<h3 id="chaining-commands">Chaining Commands</h3>
+
+<p>Let’s apply the same pattern to the <code>attack</code> command, a flow which has a
+dependent <code>chase</code> action.</p>
+
+<pre><code class="language-golang">type AttackMetadata struct {
+  s     CanAttack
+  t     CanDie  // Mortal?
+  chase *ChaseMetadata
+}
+
+func (m *AttackMetadata) Status() Status {
+  if chase.Status() == CANCELED { return CANCELED }
+  if t.Health(curTick) &lt;= 0 {
+    return FINISHED  // Cleaned up next tick.
+  }
+  if d(s, t) &lt; s.AttackRange() &amp;&amp; a.OffCooldown(curTick) {
+    return EXECUTING
+  }
+  return PENDING
+}
+
+func (c *AttackCommand) Visit(m AttackMetadata) {
+  if m.Status() == EXECUTING {
+    t.Damage(a.Strength())
+  }
+}
+</code></pre>
+
+<p><a name="figure-11"></a>Figure 11: Simplified <code>attack</code> command implementation.<sup id="fnref:7" role="doc-noteref"><a href="#fn:7" class="footnote" rel="footnote">7</a></sup></p>
+
+<p>Dependencies in our framework are modeled by a pointer in the metadata to
+another metadata object; the encompassing flow can then incorporate the
+dependent flow status when reporting its own status. We have yet to encounter a
+case where the command needs to query a dependent step’s status direcly.</p>
+
+<p>A command may need to enqueue a dependent flow. For example, consider an entity
+commanded to guard an area – when an enemy enters the entity’s line of sight,
+<code>guard</code> may decide to enqueue an <code>attack</code>. In this case, the <code>guard</code> command
+will have a reference to the <code>attack</code> schedule and call <code>q.Append()</code>.</p>
+
+<h3 id="canceling-commands">Canceling Commands</h3>
+
+<p><code>q.Append()</code> and <code>q.Merge()</code> will invoke <code>CommandMetadata.Precedence()</code>, which
+tests for the relative priority of two metadata objects. The lower priority one
+will be canceled.</p>
+
+<p><code>CommandMetadata.Cancel()</code> is command-dependent, but should also trigger the
+<code>Cancel()</code> function of dependencies. An upstream / parent command which need the
+child finish can then query the child flow status when reporting its own
+<code>Status()</code>.</p>
+
+<h2 id="see-also">See Also</h2>
+
+<ul>
+  <li><a href="https://docs.downflux.com/design/fsm.html">Arbitrary Command Execution</a>
+Technical design doc of this approach that goes deeper into implementation
+specifics.</li>
+  <li><a href="https://blog.kevmo314.com/time-invariant-finite-state-machines.html">Time-Invariant Finite State Machines</a></li>
+</ul>
+
+<h2 id="addendum">Addendum</h2>
+
+<h3 id="recontextualizing-as-event-flows">Recontextualizing as Event Flows</h3>
+
+<p>I came across a rather interesting tech talk while writing this article which
+talks about the
+<a href="https://youtu.be/STKCRSUsyP0?t=896">Event-carried State Transfer</a> software
+pattern (indeed, from what little research I’ve done on this, it seems like this
+talk is actually <em>the</em> talk which introduced the concept to the wider public).</p>
+
+<p>There are some interesting parallels here between the event-driven approach
+described and ours here. Indeed, the state query in the command executor is just
+detecting if an event occurred between the last and current server tick.
+Moreover, the event-carried state transfer pattern seems to emphasize
+<strong>minimizing data access to the underlying state</strong>. The event pattern achieves
+this through some level of caching, packed into the event data in order to
+reduce resource contention. Our implementation instead minimizes the API surface
+area that is exposed through the command metadata.</p>
+
+<p>It is true that we could massage our current approach into an event-driven
+approach; however, this seems both overengineered and antithetical to how we
+view our code.</p>
+
+<ol>
+  <li>Remember that we are treating the game system as deterministic. When an
+  object moves, the partial move schedule is already preordained – there is no
+  additional user input that is necessary in order to make the system behave
+  correctly. Our framework accounts for this by doing a series of state reads.
+  However, if we were to transform the state transitions into broadcasted
+  events, we’re asserting instead the system is always in flux, and we’re
+  “promoting” deterministic behavior into the category of “unexpected” inputs.
+  This seems like a less elegant approach, and at the same time will require a
+  large system overhaul for questionable value (for our use-case).</li>
+  <li>A single server tick will execute a list of commands in a known order, e.g.
+  we process all <code>move</code> commands, then all <code>attack</code> commands, etc. Event queues
+  are very useful when we are decoupling execution <em>order</em> from our server;
+  however, if we were to do this, then a whole new, scary world of consistency
+  problems appear. We can leave that problem to concurrent text editors and
+  CRDTs.</li>
+</ol>
+
+<h3 id="a-digression-on-attack-variants"><a name="a-digression-on-attack-variants"></a>A Digression on Attack Variants</h3>
+
+<p>While editing this document, a <a href="https://www.jonkimbel.com">friend</a> pointed out
+the toy implementation of the <code>attack</code> command does not fully specify some
+edge-case behavior –</p>
+
+<blockquote>
+  <p>I know you said this is simplified, but how do you handle situations where the
+command calls for a stationary source (e.g.
+<a href="https://cnc.fandom.com/wiki/Tesla_coil_(Red_Alert_2)">tesla coil</a>) to attack
+a target which then leaves its range?</p>
+
+  <p>Does it stay in the command queue in case the target comes back into range,
+with some lower-priority “auto attack” command dealing damage to nearby
+enemies in the meantime? Or does it cancel itself?</p>
+</blockquote>
+
+<p>This question demonstrates a nice property of the FSM / visitor approach, which
+is the flexibility of implementation. The implementation in
+<a href="#figure-11">Figure 11</a> assumes that the target can move, and will always try to
+attack the same target until the target dies. How do we extend this command?</p>
+
+<p>We can envision an <code>attack</code> variant that forgets the target after the target
+goes out of range:</p>
+
+<pre><code class="language-golang">type ForgetfulAttackMetadata struct {
+  s           CanAttack
+  t           CanDie
+  hasAttacked bool
+}
+
+func (m *ForgetfulAttackMetadata) Status() Status {
+  if t.Health(curTick) &lt;= 0 {
+    return FINISHED  // Cleaned up next tick.
+  }
+  if d(s, t) &lt; s.AttackRange() &amp;&amp; a.OffCooldown(curTick) {
+    return EXECUTING
+  }
+  if m.hasAttacked &amp;&amp; d(s, t) &gt;= s.AttackRange() {
+    return CANCELED  // Cleaned up next tick.
+  }
+
+  return PENDING
+}
+
+func (c *ForgetfulAttackCommand) Visit(m ForgetfulAttackMetadata) {
+  if m.Status() == EXECUTING {
+    t.Damage(a.Strength())
+    m.SetHasAttacked()
+  }
+}
+</code></pre>
+
+<p><a name="figure-12"></a>Figure 12: Alternative <code>attack</code> command implementation.
+Which cancels itself if the target exits range via a read-only operation.</p>
+
+<h3 id="partial-tick-execution">Partial Tick Execution</h3>
+
+<p>Because the metadata is stored in a separate queue, we can pause command
+execution at any given time during a tick – this means we can smooth out large
+server loads over several ticks, allowing us to enforce a consistent server tick
+rate (at the expense of some additional end-to-end latency). This feature is not
+currently implemented, but may be of use later.</p>
+
+<h2 id="notes">Notes</h2>
+
+<div class="footnotes" role="doc-endnotes">
+  <ol>
+    <li id="fn:1" role="doc-endnote">
+      <p>Partial pathfinding is implemented via
+<a href="https://webdocs.cs.ualberta.ca/~mmueller/ps/hpastar.pdf">hierarchical A*</a>,
+though this may / will change in the future. The point is that there may be
+additional complexity introduced into commands. As an interesting sidenote,
+partial pathfinding allows us to spread out pathfinding to multiple workers
+after the initial coarse-grain search. This may be a nice optimization route
+to go down in the future. <a href="#fnref:1" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:2" role="doc-endnote">
+      <p>Future implementations of pathfinding, e.g. via flow fields or
+navmesh-based solutions, may eliminate the need for partial paths. <a href="#fnref:2" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:3" role="doc-endnote">
+      <p>In reality, this step was implemented along with initial visitor pattern
+migration (explained later), but we’re highlighting a rather important
+motivating point for seeking better approaches to the problem. <a href="#fnref:3" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:4" role="doc-endnote">
+      <p>While <code>interface{}</code> inputs are undesirable, they aren’t necessarily an
+<em>architectural</em> problem. We’re concerned with what are potential
+project-terminators due to non-maintainability. <a href="#fnref:4" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:5" role="doc-endnote">
+      <p>For more information on this, see
+<a href="https://blog.kevmo314.com/time-invariant-finite-state-machines.html">Time-Invariant Finite State Machines</a>.
+State transitions are traditionally triggered by an “external” user; we are
+expanding the FSM here to allow for the possibility that transitions may be
+triggered without an explicit outside trigger action. This allowance gives
+us a lot of flexibility in modeling semi-autonomous commands. <a href="#fnref:5" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:6" role="doc-endnote">
+      <p>Sidenote, I learned the objectively better “cancelled” spelling is
+British, and so have reverted to the inferior but semantically consistent
+American spelling. <a href="#fnref:6" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:7" role="doc-endnote">
+      <p>For a more in-depth discussion of the <code>attack</code> command
+implementation details, see
+<a href="#a-digression-on-attack-variants">A Digression on Attack Variants</a> <a href="#fnref:7" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+    
+  </section>
+
+  
+    
+      <div id="share">
+        Comment on <a href="https://www.reddit.com/r/DownFlux/comments/lf2j4x/commanding_rts_command_scaling_state_mutations/">Reddit</a>.
+      </div>
+    
+
+    
+      
+
+
+  
+
+  <section>
+    <div id="post-footer">
+      <div id="post-footer-img-container" class="circular">
+        <div id="post-footer-img"
+             class="circular"
+             style="background-image: url(https://www.gravatar.com/avatar/9d7aad7d878f126cee5f4f9e1ea0975d?d=mm&size=200)">
+        </div>
+      </div>
+    </div>
+    <div id="post-footer-content">
+      <address>
+        <a href="https://blogzhang.com">Minke Zhang</a>
+      </address>
+      Minke is a software engineer based in the US. He enjoys running, climbing, photography, and banana-related facts. He works on DownFlux in his spare time.
+Minke prefers spaces over tabs in Python.
+    </div>
+  </section>
+
+
+
+    
+  
+
+</article>
+
+</main>
+
+
+  
+
+<footer>
+
+  
+    <div id="footer-nav-wrap">
+
+      <ul id="footer-nav">
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-twitter fa-fw"></span>
+              <a href="https://twitter.com/downfluxgame">
+                @downfluxgame
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-github fa-fw"></span>
+              <a href="https://github.com/downflux">
+                downflux
+              </a>
+            </li>
+          
+        
+          
+            
+            
+            <li>
+              <span class="fab fa-reddit fa-fw"></span>
+              <a href="https://reddit.com/r/downflux">
+                r/downflux
+              </a>
+            </li>
+          
+        
+      </ul>
+
+    </div>
+  
+
+  <div>
+    DownFlux &copy; 2021
+  </div>
+
+</footer>
+
+
+  <!--
+    Stops triggering CSS transitions on page load.
+    See https://stackoverflow.com/a/42969608.
+    -->
+  <script> </script>
+</body>
+
+</html>

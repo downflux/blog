@@ -1,0 +1,2483 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+
+
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>DownFlux</title>
+    <description>A Gamedev Blog</description>
+    <link>https://blog.downflux.com/</link>
+    <atom:link href="https://blog.downflux.com/feed.xml" rel="self" type="application/rss+xml"/>
+    <pubDate>Sun, 19 Dec 2021 21:34:50 -0800</pubDate>
+    <lastBuildDate>Sun, 19 Dec 2021 21:34:50 -0800</lastBuildDate>
+    <generator>Jekyll v4.2.1</generator>
+
+    
+    
+
+      
+
+      
+        
+
+        <item>
+
+          <title>Local Collision Avoidance</title>
+          <description>&lt;p&gt;&lt;em&gt;See ORCA in action at
+&lt;a href=&quot;http://github.com/downflux/go-orca&quot;&gt;github.com/downflux/go-orca&lt;/a&gt;.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;Consider a rectangle. If we were to double the length and width of the box, we
+&lt;em&gt;quadruple&lt;/em&gt; the total area – the area of a 2D object increases much faster than
+its characteristic length. We sometimes refer to this phenomena, and others like
+it, as &lt;em&gt;the curse of dimensionality&lt;/em&gt;. The basic idea is that when there are
+decisions to be made, adding more factors to consider is &lt;em&gt;really&lt;/em&gt; slow.&lt;/p&gt;
+
+&lt;p&gt;We are using this rectangle to represent the world map in DownFlux. One of the
+fundamental things we need to do in a real-time strategy game is to order units
+to move around the map. Pathfinding techniques such as A* are great with
+finding the optimal global path – but for large maps, we have to search &lt;em&gt;a lot&lt;/em&gt;
+due to the curse. This problem balloons when we consider the amount of units
+that can typically generate in a RTS, e.g. on the order of thousands.
+Furthermore, remember that all of these units have hitboxes – when we run
+pathfinding, not only do we need to ensure units do not collide with walls, we
+also need to make sure units don’t collide with &lt;em&gt;one another&lt;/em&gt;. As the units are
+all moving, the only way we can do this within the A* framework is to
+recalculate the paths. A lot.&lt;/p&gt;
+
+&lt;p&gt;Putting all of this together, we expect that pathfinding will be a significant
+drain on our computing resources, of which we have very little when taking into
+consideration these computations will all need to be completed within the
+fraction of a second comprising a server tick.&lt;/p&gt;
+
+&lt;p&gt;In order to reduce the pathfinding computation time then, it appears we need to
+tackle the problem in two fronts –&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;find a way to apply the results of a single A* calculation to multiple
+units, and&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;reduce the number of A* pathfinding calculations which need to occur due to
+potential collisions&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;A common command pattern in real-time strategy games is for a player to issue a
+move command to an entire group of units. A natural inclination then, is to run
+A* only on the single move target for all the units currently selected. But
+doing so will naturally generate numerous collision events as the units converge
+on a common target – so we need a way to calculate local unit movement without
+falling back to A*. We need &lt;em&gt;local collision avoidance detection&lt;/em&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;orca&quot;&gt;ORCA&lt;/h2&gt;
+
+&lt;p&gt;Optimal Reciprocal Collision Avoidance (ORCA) is a technique which guarantees
+local collision avoidance for a set of independent agents; that is, we can
+simulate a bunch of moving objects, and ensure that the objects do not overlap,
+without (or with very limited) knowledge of any global state. This is incredibly
+applicable to our problem because we can bypass &lt;em&gt;all&lt;/em&gt; collision detection A*
+invocations, which in theory will drastically reduce the computational load&lt;/p&gt;
+
+&lt;p&gt;ORCA achieves collision avoidance in two steps –&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;calculating all agent-agent interactions and coming up with a characteristic
+velocity which avoids collisions&lt;/p&gt;
+
+    &lt;pre&gt;&lt;code&gt; f(a, b) -&amp;gt; v
+&lt;/code&gt;&lt;/pre&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;given all such velocities, calculate a velocity for each agent that accounts
+for all potential upcoming collisions i.e., a fold operation&lt;/p&gt;
+
+    &lt;pre&gt;&lt;code&gt; g({v&amp;lt;sub&amp;gt;a&amp;lt;/sub&amp;gt;}) -&amp;gt; v
+&lt;/code&gt;&lt;/pre&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;When we apply these steps to all agents, we will get an agent &lt;code&gt;{a: v}&lt;/code&gt; map,
+where there is a guarantee no collisions will occur if the agent sets their
+velocity to the prescribed output. What remains is to describe how these two
+steps actually work. We will focus on the characteristic collision avoidance
+velocity here, and leave the second step to a future post.&lt;/p&gt;
+
+&lt;p&gt;Consider two agents that are currently moving towards each other.&lt;/p&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-1&quot;&gt;&lt;/a&gt;&lt;img src=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/assets/orca_vo_agent_collision.png&quot; alt=&quot;Agent Collision&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Figure 1: Two agents in position (p-)space heading towards one another.&lt;/p&gt;
+
+&lt;p&gt;In order to determine if these two objects will collide, we can systematically
+construct a velocity obstacle (VO) object in velocity (v-)space (&lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#figure-2&quot;&gt;Figure
+2&lt;/a&gt;). The VO object is defined by two fundamental properties –&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;the shape of the central blockage&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fn:1&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt; of the VO object, and&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;the coordinates of the center-of-mass of this blockage is away from the
+origin of v-space, which can be calculated from the relative velocities of the
+two objects.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;The shape of the central blockage is defined to be the set of all relative&lt;sup id=&quot;fnref:2&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fn:2&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;
+velocities between two objects which will result in collision, and the VO “cone”
+is built from extending a line from the origin to the edge of the blockage.&lt;/p&gt;
+
+&lt;p&gt;Any &lt;em&gt;relative&lt;/em&gt; velocity between the two objects that fall within this cone
+indicates that the two objects will collide at some point in the future,
+assuming the velocities stay constant.&lt;/p&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-2&quot;&gt;&lt;/a&gt;&lt;img src=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/assets/orca_vo_collision_cone.png&quot; alt=&quot;Collision Cone&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Figure 2: Velocity object between the two agents. The left figure demonstrates
+the intuitive construction of a velocity cone between two objects – here, we
+find the velocities of the bottom agent that will result in the two agents
+colliding. The right figure demonstrates a rough construction of the velocity
+obstacle object created by the agents in &lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#figure-1&quot;&gt;Figure 1&lt;/a&gt;. Note that the
+circle here defines the characteristic “width” of the cone, and whose radius is
+proportional to r&lt;sub&gt;A&lt;/sub&gt; + r&lt;sub&gt;B&lt;/sub&gt;.&lt;/p&gt;
+
+&lt;p&gt;We note that the distance from the v-space origin to the collision artifact
+(i.e. disc) is a function of time – that is, we will only achieve a collision if
+the velocity remains unchanged while the distance between the two agents
+shrinks. If our simulation time is very short (smaller than the time it would
+take to achieve collision) we should be able to proceed with the given velocity,
+even if it will &lt;em&gt;eventually&lt;/em&gt; cause a collision. Thus, we can consider a
+&lt;em&gt;truncated&lt;/em&gt; VO object, where the base of the circle has radius r&lt;sub&gt;0&lt;/sub&gt; /
+𝜏, and 𝜏 is the simulation timestep. For example, if we set&lt;/p&gt;
+
+&lt;p&gt;𝜏 = 1&lt;/p&gt;
+
+&lt;p&gt;in &lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#figure-2&quot;&gt;Figure 2&lt;/a&gt;, the base of the truncated VO object is just the solid
+circle, and the VO object points away from the origin. To reiterate, relative
+velocities between the two agents which fall inside this truncated cone will
+cause a collision within the next timestep.&lt;/p&gt;
+
+&lt;p&gt;Given a VO cone, it becomes fairly simple to generate a velocity which will
+avoid collision – this is the projected normal vector &lt;strong&gt;u&lt;/strong&gt; onto the edge of VO.
+Because the algorithm is &lt;em&gt;reciprocal&lt;/em&gt;, we can assume&lt;sup id=&quot;fnref:3&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fn:3&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;3&lt;/a&gt;&lt;/sup&gt; the opposing agent will
+also move to avoid the collision – thus, we only need to alter the velocity of
+each agent by ||&lt;strong&gt;u&lt;/strong&gt;||/2 (directed away from one another in p-space). Note
+&lt;em&gt;any&lt;/em&gt; relative velocity outside the VO object will ensure the two agents will
+not collide – because of reasons&lt;sup id=&quot;fnref:4&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fn:4&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;4&lt;/a&gt;&lt;/sup&gt;, we narrow this search space to a
+half-plane&lt;sup id=&quot;fnref:5&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fn:5&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;5&lt;/a&gt;&lt;/sup&gt; ORCA&lt;sub&gt;A|B&lt;/sub&gt; for agent A, which is orthogonal to &lt;strong&gt;u&lt;/strong&gt; and
+passes through the minimally-adjusted velocity &lt;strong&gt;v&lt;sub&gt;A&lt;/sub&gt;&lt;/strong&gt; + &lt;strong&gt;u&lt;/strong&gt;/2 (see
+&lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#figure-3&quot;&gt;Figure 3&lt;/a&gt;).&lt;/p&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-3&quot;&gt;&lt;/a&gt;&lt;img src=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/assets/orca_vo_orca.png&quot; alt=&quot;ORCA&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Figure 3: Construction of the ORCA half-plane of agent A given agent B. Note
+that &lt;strong&gt;u&lt;/strong&gt; points to the closest point on the VO object from the relative
+velocity, and thus by definition is perpendicular to the surface of VO. Here,
+F(ORCA&lt;sub&gt;A|B&lt;/sub&gt;) indicates the direction of the half-plane – that is, the
+region in v-space which are permissible velocities for agent A.&lt;/p&gt;
+
+&lt;p&gt;We will leave discussion of how to use these ORCA planes to the next part.&lt;/p&gt;
+
+&lt;h2 id=&quot;works-cited&quot;&gt;Works Cited&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;van den Berg et al. “Reciprocal &lt;em&gt;n&lt;/em&gt;-Body Collision Avoidance.” 2011.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Snape et al. “Reciprocal Collision Avoidance and Navigation for Video Games.”
+2012.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Sunshine-Hill, Ben. “RVO and ORCA: How They Really Work.” 2017.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Snape, James. &lt;a href=&quot;https://github.com/snape/RVO2&quot;&gt;snape/RVO2&lt;/a&gt;. 2021.&lt;sup id=&quot;fnref:6&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fn:6&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;6&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;notes&quot;&gt;Notes&lt;/h2&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;For two circular agents, this is a disc. &lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Velocity objects generally are constructed for non-relativistic agents,
+and the relative velocities are just the normal vector difference
+&lt;strong&gt;v&lt;sub&gt;A&lt;/sub&gt;&lt;/strong&gt; - &lt;strong&gt;v&lt;sub&gt;B&lt;/sub&gt;&lt;/strong&gt;. &lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fnref:2&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:3&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;This is a configurable value – for example, we may make an agent with more
+mass less liable to change its own velocity. This can be done either
+implicitly, by refusing to alter the actual velocity of the more massive
+agent, at the cost of potential collisions if the timestep is too large, or
+by feeding the VO-generation library with a local weighting function (e.g.
+giving the more massive agent a weighted velocity change value of
+||&lt;strong&gt;u&lt;/strong&gt;||/10, with the less massive agent moving the remainder
+9||&lt;strong&gt;u&lt;/strong&gt;||/10). &lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fnref:3&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:4&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;&lt;em&gt;Why&lt;/em&gt; we define this geometric object is due to math™, but more details
+can be found in van den Berg et al. &lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fnref:4&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:5&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Technically a hyperspace in N-dimensional ambient space (e.g. a half-space
+if our velocity vectors have a z-component). &lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fnref:5&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:6&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;A lot of the work in our ORCA implemenation is based off of the official
+ORCA implementation under the Apache 2.0 license. We thank the original author
+for their work. &lt;a href=&quot;https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/#fnref:6&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;
+</description>
+          <pubDate>Sun, 19 Dec 2021 00:00:00 -0800</pubDate>
+          <link>https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/</link>
+          <guid isPermaLink="true">https://blog.downflux.com/2021/12/19/orca-velocity-obstacles/</guid>
+
+          
+            <category>blog</category>
+          
+            <category>orca</category>
+          
+            <category>vo</category>
+          
+            <category>pathfinding</category>
+          
+
+          
+
+        </item>
+      
+
+    
+
+      
+
+      
+        
+
+        <item>
+
+          <title>Commanding RTS Commands</title>
+          <description>&lt;p&gt;Scaling State Mutations via FSM Visitors&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;DownFlux is a real-time strategy game in active development at
+&lt;a href=&quot;https://github.com/downflux&quot;&gt;github.com/downflux&lt;/a&gt;. The goal of this project is
+simply to learn and have fun. I have several years of professional software
+development experience, none of which is in the game industry. This document
+does not advocate a general form solution for all state mutation problems, but
+rather demonstrates a different view of the command pattern. For a more
+technical and detailed overview of this approach, take a look at the &lt;a href=&quot;https://blog.downflux.com/2021/01/13/arbitrary-command-execution/&quot;&gt;design
+doc&lt;/a&gt;.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;I mix first person plural in this document liberally because it sounds awkward
+to keep saying “I” all the time, not because I’m royalty.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;abstract&quot;&gt;Abstract&lt;/h2&gt;
+
+&lt;p&gt;A major problem we’re facing while working on DownFlux has been finding a
+scalable approach to state mutations. Scalability here represents the ability
+for us to remain agile when implementing new mutation flows – this encompasses
+general good software development guidelines like testability, code “fragrance”
+(i.e. lack of smell), and framework flexibility.&lt;/p&gt;
+
+&lt;p&gt;Our model of a mutation flow consists of a command scheduler object, housing a
+metadata object per distinct flow invocation. These metadata objects are a thin
+wrapper around a finite state machine (FSM), and exposes a minimal subset of the
+game state to a visitor object.&lt;/p&gt;
+
+&lt;p&gt;Our metadata objects may only call read-only queries to the game state, and
+returns a calculated state to the visitor. The visitor may invoke write
+operations on both the metadata and the underlying state.&lt;/p&gt;
+
+&lt;p&gt;See a snapshot of our
+&lt;a href=&quot;https://github.com/downflux/game/tree/8fbaefebcb31d5f59796c6285595ccda544dc02f&quot;&gt;repo&lt;/a&gt;
+for more details. Feel free to reach out on
+&lt;a href=&quot;https://reddit.com/r/downflux&quot;&gt;Reddit&lt;/a&gt; or
+&lt;a href=&quot;https://twitter.com/downfluxgame&quot;&gt;Twitter&lt;/a&gt; with questions or comments.&lt;/p&gt;
+
+&lt;h2 id=&quot;jargon&quot;&gt;Jargon&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;state mutations, flows, commands: a series of changes to the game state (e.g.
+map, entities, etc.) which achieve a specific end-goal (e.g. &lt;code&gt;move&lt;/code&gt;)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;flow-examples&quot;&gt;Flow Examples&lt;/h3&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;code&gt;move(source, dest)&lt;/code&gt;: move the source object to the destination location.&lt;/li&gt;
+  &lt;li&gt;&lt;code&gt;chase(source, target)&lt;/code&gt;: series of serialized moves, which are updated as the
+destination object moves.&lt;/li&gt;
+  &lt;li&gt;&lt;code&gt;attack(source, target)&lt;/code&gt;: chase target asynchronously; if target is within
+attack range and the source can attack (off cooldown), then commit state
+change.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;an-ad-hoc-approach&quot;&gt;An ad hoc Approach&lt;/h2&gt;
+
+&lt;p&gt;The first attempt we made at implementing a state mutation “framework” skipped
+any consideration of scalability or maintainability for the sake of an MVP. Here
+is our single &lt;code&gt;move&lt;/code&gt; command:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;func (s *Server) doTick() {
+  for {
+    for c := range s.Commands() {
+      // Client calls mutate this CommandQueue object by appending
+      // pending commands.
+      c.Execute(s.q[c.Type()])
+    }
+  }
+}
+
+type Command interface {
+  Execute(args interface{}) error
+  Type() CommandType
+}
+
+func (c *MoveCommand) Execute(args interface{}) error {
+  a = args.(MoveCommandArg)
+
+  // p is a list of Position objects (i.e. (x, y) tuples).
+  p = c.map.GetPath(a.Source.Location.Get(a.Tick), a.Destination)
+
+  // Source merges the positions with internal velocity in
+  // the curve.
+  a.Source.Location.Update(p)
+  return nil
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-1&quot;&gt;&lt;/a&gt;Figure 1: Simple implementation of the &lt;code&gt;move&lt;/code&gt; command.&lt;/p&gt;
+
+&lt;p&gt;Yup. This moves things. How do we start overengineer this?&lt;/p&gt;
+
+&lt;p&gt;Our second order approximation takes into consideration &lt;code&gt;GetPath&lt;/code&gt; is expensive
+– we’re making a full A* search. But in an RTS game, it is very often the case
+that the player direct units to a different location before the unit reaches the
+target, wasting a lot of compute cycles.&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fn:1&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt; Therefore, we want to calculate and
+set a partial trajectory instead, with delayed execution of the rest of the
+path.&lt;sup id=&quot;fnref:2&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fn:2&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/assets/scaling_commands_partial_move.png&quot; alt=&quot;Partial Move DAG&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-2&quot;&gt;&lt;/a&gt;Figure 2: Partial path diagram. The command should only
+calculate p&lt;sub&gt;0&lt;/sub&gt; first; at some time t in the future, recalculate the
+path (which may involve further sub-path iterations).&lt;/p&gt;
+
+&lt;p&gt;With the partial path logic, our command now looks something like this:&lt;sup id=&quot;fnref:3&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fn:3&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;3&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;func (s *Server) doTick() {
+  for var args := range s.q {
+    c.Execute(curTick, args)
+  }
+}
+
+// Called by client API as well as internally.
+func (c *MoveCommand) Schedule(
+  t Tick,
+  e Entity,
+  d Destination) error {
+
+  scheduledAction := c.q.Get(e)
+  if scheduledAction != nil &amp;amp;&amp;amp; scheduledAction.Precedence(t) {
+    c.q.Set(t, e, d)
+  }
+}
+
+func (c *MoveCommand) Execute(t Tick, args interface{}) {
+  const pathLen int = 10;
+  var arg := args.(MoveCommandArg)
+
+  // Return a path of a specific length instead.
+  p = c.Map.GetPath(
+    arg.Source.Location.Get(t),
+    arg.Destination,
+    pathLen,
+  )
+
+  arg.Source.Location.Update(p)
+
+  // Schedule partial path execution if the last element of the path is not
+  // the &quot;true&quot; destination. c.Schedule() also needs to calculate if there are
+  // any existing commands that need to be overwritten.
+  if p[len(p) - 1] != arg.Destination {
+    c.Schedule(
+      t + a.Source.CalculateTravelTime(p),
+      arg.Source,
+      arg.Destination)
+  } else {
+    c.Delete(arg)
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-3&quot;&gt;&lt;/a&gt;Figure 3: Toy &lt;code&gt;move&lt;/code&gt; command implementation v2 – here we
+enqueue a delayed move command into the main queue. This queue may have client-
+or other server-initiated command scheduling, so when we update the queue, we
+need to ensure there is a single, canonical execution flow; this logic is packed
+into the &lt;code&gt;Schedule()&lt;/code&gt; function, meaning &lt;strong&gt;a single command will need to know the
+implementation logic / hierarchy of all other commands&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;Kind of a pain, but still doable.&lt;/p&gt;
+
+&lt;p&gt;This model worked well enough for us to get a rudimentary frontend client
+running; however, a gut check seems to indicate major scalability issues with
+this approach.&lt;sup id=&quot;fnref:4&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fn:4&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;4&lt;/a&gt;&lt;/sup&gt; In particular,&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;A command may act on multiple entity types, and an entity may have multiple
+  mutation flows – the implementations so far already demonstrates this
+  vulnerability IMO.&lt;/li&gt;
+  &lt;li&gt;Because the command queue contains commands from all command implementations
+  (i.e. &lt;code&gt;move&lt;/code&gt;, &lt;code&gt;attack&lt;/code&gt;, etc.) and the command may mutate the queue (e.g.
+  partial move enqueues), the command must know the details of all siblings
+  flows.&lt;/li&gt;
+  &lt;li&gt;The command must manually check the global state each time it is invoked, e.g.
+  if the source has reached the destination. It is unclear how each command will
+  implement this state read, which will impede maintainability.&lt;/li&gt;
+  &lt;li&gt;&lt;code&gt;Command.Execute()&lt;/code&gt; read and writes to the global state; from our simple move
+  example, this already seems like a testability nightmare and needs to be
+  addressed.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;A common theme to these issues is the broad scope and authority we have
+conferred upon the command object; how can we clamp down on this?&lt;/p&gt;
+
+&lt;h2 id=&quot;an-accidental-tour-de-entities&quot;&gt;(An Accidental) Tour de Entities&lt;/h2&gt;
+
+&lt;p&gt;The first concern seems like a classic double dispatcher problem between the
+command and the entities (e.g. tanks) that they mutate. This seems to suggest we
+should break out the command into a
+&lt;a href=&quot;https://en.wikipedia.org/wiki/Visitor_pattern&quot;&gt;visitor pattern&lt;/a&gt; implementation.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;func (s *Server) doTick() {
+  for var v := range s.Commands() {
+    for var e := range s.Entities {
+      e.Accept(v)
+    }
+  }
+}
+
+func (e *EntityImpl) Accept(v Visitor) { v.Visit(e) }
+
+func (c *MoveCommand) Visit(e Entity) {
+    if !e.IsMoveable() { return }
+
+    if c.q.Has(e) {
+      // This is the same implementation as in [Figure 3](#figure-3).
+      c.Execute(c.Status.CurrentTick(), ...)
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-4&quot;&gt;&lt;/a&gt;Figure 4: The architectural change counterpart to the
+changes made in &lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#figure-3&quot;&gt;Figure 3&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;There are some flaws here.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;The &lt;code&gt;Acceptor&lt;/code&gt; object is a single game entity – this is not abstract enough.
+  Consider the &lt;code&gt;attack&lt;/code&gt; command which mutates both the attacker and target –
+  how do we visit target in an &lt;code&gt;AttackCommand&lt;/code&gt;? Do we need a
+  &lt;code&gt;DealDamageVisitor&lt;/code&gt;? If so, suggests we will need a message broker between
+  attacking and taking damage, which seems unnecessarily overwrought.&lt;/li&gt;
+  &lt;li&gt;The command still has to deal with the schedule (&lt;code&gt;c.q&lt;/code&gt;), which is a &lt;em&gt;global
+  mutatable state&lt;/em&gt;. As mentioned in &lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#figure-2&quot;&gt;Figure 2&lt;/a&gt;, the schedule may be
+  edited by both sides of the network divide, and having our command dealing
+  with that logic directly seems messy.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Note that &lt;strong&gt;this refactor was actually useless in terms of reducing tech debt&lt;/strong&gt;,
+but was very important in exposing the points of friction that we will need to
+address.&lt;/p&gt;
+
+&lt;h2 id=&quot;finite-state-metadata&quot;&gt;Finite State Metadata&lt;/h2&gt;
+
+&lt;p&gt;Let’s examine the first concern above, where we’re dealing with pain points
+brought up by iterating over the entities themselves in a command. Because we’re
+visiting the entity, that means any broader details about the execution
+(including e.g. partial move cached data) still need to be managed by the
+command object:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;type MoveCommand struct {
+  // Reference to global state.
+  q []MoveCommandArg
+  ...
+}
+
+func (c *MoveCommand) Visit(e Entity) {
+  if c.q.Has(e, ...) { ... }  // See [Figure 4](#figure-4)
+  ...
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;This seems inefficient – why are we accepting a non-scheduled entity as valid
+input? In fact, our first approach was probably closer to the mark – let’s just
+pass the command metadata as input instead!&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;func (c *MoveCommand) Visit(m MoveCommandArg) { ... }
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;One key difference between this and our initial implementation is how we’re
+approaching the metadata object here – we’re promoting the metadata into a
+“real” data struct, and as such, we need to consider the exported metadata API.
+What does a command need from the metadata?&lt;/p&gt;
+
+&lt;p&gt;In the case of &lt;code&gt;move&lt;/code&gt; (with partial implementation), we need to track when the
+next iteration of partial paths need to be calculated. Seems like a job for an
+FSM!&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;type CommandMetadata interface {
+  Status() FSMState
+  Transitions() map[FSMState]FSMState
+
+  // Used to determine which command needs to be canceled.
+  Precedence(o CommandMetadata) bool
+
+  // Triggered by Schedule or a Command.
+  Cancel()
+}
+
+// MoveCommandArg will implement the CommandMetadata interface.
+type MoveCommandArg struct {
+  scheduledTick Tick
+  source        Moveable
+  destination   Position
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-5&quot;&gt;&lt;/a&gt;Figure 5: Expanded &lt;code&gt;MoveCommandArg&lt;/code&gt; type from
+&lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#figure-1&quot;&gt;Figure 1&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Where the FSM DAG for &lt;code&gt;MoveCommandArg&lt;/code&gt; is as follow:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/assets/scaling_commands_move_dag.png&quot; alt=&quot;Move DAG&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-6&quot;&gt;&lt;/a&gt;Figure 6: &lt;code&gt;move&lt;/code&gt; state diagram.&lt;/p&gt;
+
+&lt;p&gt;The most straightforward way to link this into &lt;code&gt;MoveCommand.Visit()&lt;/code&gt; looks
+something like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;func (c *MoveCommand) Visit(m *MoveCommandArg) {
+  if m.Tick() == curTick {
+    m.SetStatusOrDie(EXECUTING)
+  }
+  if m.Status() == EXECUTING {
+    p = c.Map.GetPath(..., pathLen)
+    ...
+
+    // Need to schedule next iteration.
+    if m.Destination() != p[len(p) - 1] {
+      m.SetTick(...)
+      m.SetStatusOrDie(PENDING)
+    }  
+  }
+  if m.Source().Location(curTick) == m.Destination() {
+    m.SetStatusOrDie(FINISHED)
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-7&quot;&gt;&lt;/a&gt;Figure 7: &lt;code&gt;move&lt;/code&gt; implementation with partial paths and
+FSM metadata inputs.&lt;/p&gt;
+
+&lt;p&gt;This seems cleaner than what we had before! We have a formal FSM structure
+validating the partial command action being executed. Additionally, because
+we’re passing a reference to the metadata object into &lt;code&gt;Visit()&lt;/code&gt;, we can migrate
+the schedule away from the command.&lt;/p&gt;
+
+&lt;p&gt;This still seems a bit messy though, when we have to call &lt;code&gt;SetStatusOrDie&lt;/code&gt; so
+many times. Is there a way we can not do that?&lt;/p&gt;
+
+&lt;p&gt;(Yes.)&lt;/p&gt;
+
+&lt;h3 id=&quot;read-only-fsms&quot;&gt;Read-Only FSMs&lt;/h3&gt;
+
+&lt;p&gt;We observe that the state of an FSM is an explicit representation of the
+underlying system. &lt;em&gt;It does not matter how we calculate this state!&lt;/em&gt; In
+&lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#figure-7&quot;&gt;Figure 7&lt;/a&gt;, we “calculated” the state by storing it as an internal
+variable via &lt;code&gt;SetStatusOrDie()&lt;/code&gt;, but we can also &lt;em&gt;treat the state as a generic
+read-only operation on the system&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;As an example, let’s consider the state diagram of the &lt;code&gt;move&lt;/code&gt; command:&lt;sup id=&quot;fnref:5&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fn:5&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;5&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;code&gt;FINISHED&lt;/code&gt;: A &lt;code&gt;move&lt;/code&gt; command is finished if the source entity has arrived at
+the given destination.&lt;/li&gt;
+  &lt;li&gt;&lt;code&gt;PENDING&lt;/code&gt;: If the internal &lt;code&gt;m.scheduledTick&lt;/code&gt; does not equal the current tick,
+the command is not yet ready to execute; this accounts for both when the
+source is already moving, or still needs to calculate the next partial move.&lt;/li&gt;
+  &lt;li&gt;&lt;code&gt;EXECUTING&lt;/code&gt;: If &lt;code&gt;m.ScheduledTick&lt;/code&gt; equals current game tick, the command needs
+to take action and actually calculate the path of the object. At the end of
+the execution phase, the scheduled tick should be updated.&lt;/li&gt;
+  &lt;li&gt;&lt;code&gt;CANCELED&lt;/code&gt;:&lt;sup id=&quot;fnref:6&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fn:6&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;6&lt;/a&gt;&lt;/sup&gt; An externally triggered transition if e.g. the client
+specifies another move command in the meantime. This may need to be explicitly
+set.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;So in code form, this looks something like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;// MoveCommandArg will implement the CommandMetadata interface.
+type MoveCommandArg struct {
+  scheduledTick Tick
+  isCanceled    bool
+
+  // References the actual game state.
+  status        *TickStatus  // Exports CurrentTick().
+  source        Moveable
+  destination   Position
+}
+
+func (m *MoveCommandArg) Status() FSMStatus {
+  if m.isCanceled == CANCELED { return CANCELED }
+  if m.source.Location.Get(m.status.CurrentTick()) == m.destination {
+    return FINISHED
+  }
+  if m.scheduledTick == status.CurrentTick() {
+    return EXECUTING
+  }
+  return PENDING
+}
+
+func (c *MoveCommand) Visit(m MoveCommandArg) {
+  if m.Status() == EXECUTING {
+    ...
+    m.SetScheduledTick(...)
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-8&quot;&gt;&lt;/a&gt;Figure 8: Toy implementation of the &lt;code&gt;move&lt;/code&gt; command with
+smart metadata objects.&lt;/p&gt;
+
+&lt;p&gt;By making the metadata a bit smarter, we’ve greatly reduced the burden on the
+execution logic. Note that the metadata object itself is &lt;strong&gt;read-only&lt;/strong&gt; – we are
+ensuring that only the command object has the ability to write to the game
+state, as well as to the metadata object (e.g. &lt;code&gt;SetScheduledTick()&lt;/code&gt;). Our server
+tick logic currently looks like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;func (s *Server) doTick() {
+  for var v := range s.Visitors() {
+    for var q := range s.q[v.Type()] {
+      // It is up to each metadata list to decide if it may be run in parallel
+      // or not.
+      q.Accept(v)
+    }
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;To pause a second, here is what our infrastructure looks like at the moment:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://blog.downflux.com/2021/01/13/arbitrary-command-execution/assets/fsm_visitor.png&quot; alt=&quot;FSM Visitor DAG&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-9&quot;&gt;&lt;/a&gt; Figure 9: FSM / Visitor relationship diagram. The dirty
+state component is outside the scope of this blog post, but is explained in the
+&lt;a href=&quot;https://blog.downflux.com/2021/01/13/arbitrary-command-execution/&quot;&gt;design doc&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;two-pass-scheduler&quot;&gt;Two-Pass Scheduler&lt;/h2&gt;
+
+&lt;p&gt;The other friction point we had was with regards to the complexity of having the
+command pushing into a two-way schedule (i.e., one that is directly mutated by
+both the client and server). We need a way to control the timing of when
+schedule mutations are made.&lt;/p&gt;
+
+&lt;p&gt;Our solution to this problem was to implement a client-only schedule object
+which is used as a scratchpad for incoming requests. At the beginning of each
+tick, we merge this into our actual source-of-truth schedule:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;type Schedule interface {
+  Append(t VisitorType, m CommandMetadata)
+  RemoveCanceledAndFinished()
+
+  // Requires CommandMetadata to implement Precedence().
+  Merge(o Schedule)
+}
+
+func (s *Server) doTick() {
+  s.q.RemoveCanceledAndFinished()
+  s.q.Merge(s.clientSchedule)
+
+  for var v := range s.Visitors() { ... }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-10&quot;&gt;&lt;/a&gt;Figure 10: Two-pass schedule implementation.&lt;/p&gt;
+
+&lt;p&gt;This ensures when commands are running, the command has exclusive write access
+to the schedule – since only instances of the same command are executing at the
+same time, reasoning about concurrency becomes greatly simplified.&lt;/p&gt;
+
+&lt;h2 id=&quot;conclusions&quot;&gt;Conclusions&lt;/h2&gt;
+
+&lt;p&gt;An interesting tangent: a core application of the visitor pattern is for a
+double-dispatch table; however, note that we have a strict one-to-one
+relationship between a single &lt;code&gt;CommandMetadata&lt;/code&gt; implementation and a command.
+There is no double dispatch here.&lt;/p&gt;
+
+&lt;p&gt;However, the &lt;em&gt;reason&lt;/em&gt; why a visitor pattern is good when solving for the
+double-dispatch is because it forces a decoupling of the underlying data object
+from the mutations. It is our good fortune that we chose to view the problem
+through this lens, even if we originally applied the pattern inappropriately.&lt;/p&gt;
+
+&lt;p&gt;If we wished, we can migrate back to using a simple for loop to call the
+commands, as we originally did, but safe in the knowledge that we have arrived
+at a scalable approach to building state mutation flows.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;func (s *Server) doTick() {
+  ...
+  for var c := range s.Commands() {
+    for var m := range s.q[c.GetType()] {
+      // If the command wants to run serially, it may employ a class-level lock
+      // on Execute().
+      go c.Execute(m)
+    }
+    // Wait for all invocations to return before continuing to next command.
+    ...
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&quot;chaining-commands&quot;&gt;Chaining Commands&lt;/h3&gt;
+
+&lt;p&gt;Let’s apply the same pattern to the &lt;code&gt;attack&lt;/code&gt; command, a flow which has a
+dependent &lt;code&gt;chase&lt;/code&gt; action.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;type AttackMetadata struct {
+  s     CanAttack
+  t     CanDie  // Mortal?
+  chase *ChaseMetadata
+}
+
+func (m *AttackMetadata) Status() Status {
+  if chase.Status() == CANCELED { return CANCELED }
+  if t.Health(curTick) &amp;lt;= 0 {
+    return FINISHED  // Cleaned up next tick.
+  }
+  if d(s, t) &amp;lt; s.AttackRange() &amp;amp;&amp;amp; a.OffCooldown(curTick) {
+    return EXECUTING
+  }
+  return PENDING
+}
+
+func (c *AttackCommand) Visit(m AttackMetadata) {
+  if m.Status() == EXECUTING {
+    t.Damage(a.Strength())
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-11&quot;&gt;&lt;/a&gt;Figure 11: Simplified &lt;code&gt;attack&lt;/code&gt; command implementation.&lt;sup id=&quot;fnref:7&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fn:7&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;7&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+&lt;p&gt;Dependencies in our framework are modeled by a pointer in the metadata to
+another metadata object; the encompassing flow can then incorporate the
+dependent flow status when reporting its own status. We have yet to encounter a
+case where the command needs to query a dependent step’s status direcly.&lt;/p&gt;
+
+&lt;p&gt;A command may need to enqueue a dependent flow. For example, consider an entity
+commanded to guard an area – when an enemy enters the entity’s line of sight,
+&lt;code&gt;guard&lt;/code&gt; may decide to enqueue an &lt;code&gt;attack&lt;/code&gt;. In this case, the &lt;code&gt;guard&lt;/code&gt; command
+will have a reference to the &lt;code&gt;attack&lt;/code&gt; schedule and call &lt;code&gt;q.Append()&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h3 id=&quot;canceling-commands&quot;&gt;Canceling Commands&lt;/h3&gt;
+
+&lt;p&gt;&lt;code&gt;q.Append()&lt;/code&gt; and &lt;code&gt;q.Merge()&lt;/code&gt; will invoke &lt;code&gt;CommandMetadata.Precedence()&lt;/code&gt;, which
+tests for the relative priority of two metadata objects. The lower priority one
+will be canceled.&lt;/p&gt;
+
+&lt;p&gt;&lt;code&gt;CommandMetadata.Cancel()&lt;/code&gt; is command-dependent, but should also trigger the
+&lt;code&gt;Cancel()&lt;/code&gt; function of dependencies. An upstream / parent command which need the
+child finish can then query the child flow status when reporting its own
+&lt;code&gt;Status()&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;see-also&quot;&gt;See Also&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://docs.downflux.com/design/fsm.html&quot;&gt;Arbitrary Command Execution&lt;/a&gt;
+Technical design doc of this approach that goes deeper into implementation
+specifics.&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://blog.kevmo314.com/time-invariant-finite-state-machines.html&quot;&gt;Time-Invariant Finite State Machines&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;addendum&quot;&gt;Addendum&lt;/h2&gt;
+
+&lt;h3 id=&quot;recontextualizing-as-event-flows&quot;&gt;Recontextualizing as Event Flows&lt;/h3&gt;
+
+&lt;p&gt;I came across a rather interesting tech talk while writing this article which
+talks about the
+&lt;a href=&quot;https://youtu.be/STKCRSUsyP0?t=896&quot;&gt;Event-carried State Transfer&lt;/a&gt; software
+pattern (indeed, from what little research I’ve done on this, it seems like this
+talk is actually &lt;em&gt;the&lt;/em&gt; talk which introduced the concept to the wider public).&lt;/p&gt;
+
+&lt;p&gt;There are some interesting parallels here between the event-driven approach
+described and ours here. Indeed, the state query in the command executor is just
+detecting if an event occurred between the last and current server tick.
+Moreover, the event-carried state transfer pattern seems to emphasize
+&lt;strong&gt;minimizing data access to the underlying state&lt;/strong&gt;. The event pattern achieves
+this through some level of caching, packed into the event data in order to
+reduce resource contention. Our implementation instead minimizes the API surface
+area that is exposed through the command metadata.&lt;/p&gt;
+
+&lt;p&gt;It is true that we could massage our current approach into an event-driven
+approach; however, this seems both overengineered and antithetical to how we
+view our code.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Remember that we are treating the game system as deterministic. When an
+  object moves, the partial move schedule is already preordained – there is no
+  additional user input that is necessary in order to make the system behave
+  correctly. Our framework accounts for this by doing a series of state reads.
+  However, if we were to transform the state transitions into broadcasted
+  events, we’re asserting instead the system is always in flux, and we’re
+  “promoting” deterministic behavior into the category of “unexpected” inputs.
+  This seems like a less elegant approach, and at the same time will require a
+  large system overhaul for questionable value (for our use-case).&lt;/li&gt;
+  &lt;li&gt;A single server tick will execute a list of commands in a known order, e.g.
+  we process all &lt;code&gt;move&lt;/code&gt; commands, then all &lt;code&gt;attack&lt;/code&gt; commands, etc. Event queues
+  are very useful when we are decoupling execution &lt;em&gt;order&lt;/em&gt; from our server;
+  however, if we were to do this, then a whole new, scary world of consistency
+  problems appear. We can leave that problem to concurrent text editors and
+  CRDTs.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3 id=&quot;a-digression-on-attack-variants&quot;&gt;&lt;a name=&quot;a-digression-on-attack-variants&quot;&gt;&lt;/a&gt;A Digression on Attack Variants&lt;/h3&gt;
+
+&lt;p&gt;While editing this document, a &lt;a href=&quot;https://www.jonkimbel.com&quot;&gt;friend&lt;/a&gt; pointed out
+the toy implementation of the &lt;code&gt;attack&lt;/code&gt; command does not fully specify some
+edge-case behavior –&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;I know you said this is simplified, but how do you handle situations where the
+command calls for a stationary source (e.g.
+&lt;a href=&quot;https://cnc.fandom.com/wiki/Tesla_coil_(Red_Alert_2)&quot;&gt;tesla coil&lt;/a&gt;) to attack
+a target which then leaves its range?&lt;/p&gt;
+
+  &lt;p&gt;Does it stay in the command queue in case the target comes back into range,
+with some lower-priority “auto attack” command dealing damage to nearby
+enemies in the meantime? Or does it cancel itself?&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;This question demonstrates a nice property of the FSM / visitor approach, which
+is the flexibility of implementation. The implementation in
+&lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#figure-11&quot;&gt;Figure 11&lt;/a&gt; assumes that the target can move, and will always try to
+attack the same target until the target dies. How do we extend this command?&lt;/p&gt;
+
+&lt;p&gt;We can envision an &lt;code&gt;attack&lt;/code&gt; variant that forgets the target after the target
+goes out of range:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;type ForgetfulAttackMetadata struct {
+  s           CanAttack
+  t           CanDie
+  hasAttacked bool
+}
+
+func (m *ForgetfulAttackMetadata) Status() Status {
+  if t.Health(curTick) &amp;lt;= 0 {
+    return FINISHED  // Cleaned up next tick.
+  }
+  if d(s, t) &amp;lt; s.AttackRange() &amp;amp;&amp;amp; a.OffCooldown(curTick) {
+    return EXECUTING
+  }
+  if m.hasAttacked &amp;amp;&amp;amp; d(s, t) &amp;gt;= s.AttackRange() {
+    return CANCELED  // Cleaned up next tick.
+  }
+
+  return PENDING
+}
+
+func (c *ForgetfulAttackCommand) Visit(m ForgetfulAttackMetadata) {
+  if m.Status() == EXECUTING {
+    t.Damage(a.Strength())
+    m.SetHasAttacked()
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-12&quot;&gt;&lt;/a&gt;Figure 12: Alternative &lt;code&gt;attack&lt;/code&gt; command implementation.
+Which cancels itself if the target exits range via a read-only operation.&lt;/p&gt;
+
+&lt;h3 id=&quot;partial-tick-execution&quot;&gt;Partial Tick Execution&lt;/h3&gt;
+
+&lt;p&gt;Because the metadata is stored in a separate queue, we can pause command
+execution at any given time during a tick – this means we can smooth out large
+server loads over several ticks, allowing us to enforce a consistent server tick
+rate (at the expense of some additional end-to-end latency). This feature is not
+currently implemented, but may be of use later.&lt;/p&gt;
+
+&lt;h2 id=&quot;notes&quot;&gt;Notes&lt;/h2&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Partial pathfinding is implemented via
+&lt;a href=&quot;https://webdocs.cs.ualberta.ca/~mmueller/ps/hpastar.pdf&quot;&gt;hierarchical A*&lt;/a&gt;,
+though this may / will change in the future. The point is that there may be
+additional complexity introduced into commands. As an interesting sidenote,
+partial pathfinding allows us to spread out pathfinding to multiple workers
+after the initial coarse-grain search. This may be a nice optimization route
+to go down in the future. &lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Future implementations of pathfinding, e.g. via flow fields or
+navmesh-based solutions, may eliminate the need for partial paths. &lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fnref:2&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:3&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;In reality, this step was implemented along with initial visitor pattern
+migration (explained later), but we’re highlighting a rather important
+motivating point for seeking better approaches to the problem. &lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fnref:3&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:4&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;While &lt;code&gt;interface{}&lt;/code&gt; inputs are undesirable, they aren’t necessarily an
+&lt;em&gt;architectural&lt;/em&gt; problem. We’re concerned with what are potential
+project-terminators due to non-maintainability. &lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fnref:4&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:5&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;For more information on this, see
+&lt;a href=&quot;https://blog.kevmo314.com/time-invariant-finite-state-machines.html&quot;&gt;Time-Invariant Finite State Machines&lt;/a&gt;.
+State transitions are traditionally triggered by an “external” user; we are
+expanding the FSM here to allow for the possibility that transitions may be
+triggered without an explicit outside trigger action. This allowance gives
+us a lot of flexibility in modeling semi-autonomous commands. &lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fnref:5&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:6&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Sidenote, I learned the objectively better “cancelled” spelling is
+British, and so have reverted to the inferior but semantically consistent
+American spelling. &lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fnref:6&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:7&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;For a more in-depth discussion of the &lt;code&gt;attack&lt;/code&gt; command
+implementation details, see
+&lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#a-digression-on-attack-variants&quot;&gt;A Digression on Attack Variants&lt;/a&gt; &lt;a href=&quot;https://blog.downflux.com/2021/02/05/commanding-rts-commands/#fnref:7&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;
+</description>
+          <pubDate>Fri, 05 Feb 2021 00:00:00 -0800</pubDate>
+          <link>https://blog.downflux.com/2021/02/05/commanding-rts-commands/</link>
+          <guid isPermaLink="true">https://blog.downflux.com/2021/02/05/commanding-rts-commands/</guid>
+
+          
+            <category>FSM</category>
+          
+            <category>visitor pattern</category>
+          
+            <category>commands</category>
+          
+
+          
+
+        </item>
+      
+
+    
+
+      
+
+      
+        
+
+        <item>
+
+          <title>Arbitrary Command Execution</title>
+          <description>&lt;p&gt;Scaling Complex Flows with FSM Metadata&lt;/p&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th style=&quot;text-align: left&quot;&gt;Status&lt;/th&gt;
+      &lt;th style=&quot;text-align: left&quot;&gt;final&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Author(s)&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;minke.zhang@gmail.com&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Contributor(s)&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;bleh777777777777@gmail.com&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Last Updated&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;2021-01-12&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;h2 id=&quot;background&quot;&gt;Background&lt;/h2&gt;
+
+&lt;p&gt;DownFlux is a real-time strategy game which potentially requires a wide
+variety of state-mutating flows. Because both the state and the flows are
+complex, we need a formal framework to describe the work that needs to be done
+to change the state. In a world where we add ad hoc state mutations, we will
+very quickly see the pains of a complex chain of code without a clear debug
+entry point.&lt;/p&gt;
+
+&lt;h2 id=&quot;overview&quot;&gt;Overview&lt;/h2&gt;
+
+&lt;p&gt;We will break any given state mutation into two parts – a command metadata
+object, and a command executor. The metadata describes the overall command,
+exposes a specific subset of the game state, and tracks the work that is
+currently being done and will need to be done. The metadata may hold a
+reference to a child command metadata struct as well.&lt;/p&gt;
+
+&lt;p&gt;On every game tick, the executor object queries the metadata for what work (if
+any) needs to be done. The metadata queries only its internal references –
+notably, this is a read-only operation; the metadata object does not have
+authority to mutate state on its own. If the metadata signals to the executor
+that work needs to be done, the excutor will then explicitly mutate both the
+game and metadata object as appropriate.&lt;/p&gt;
+
+&lt;h2 id=&quot;detailed-design&quot;&gt;Detailed Design&lt;/h2&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://blog.downflux.com/2021/01/13/arbitrary-command-execution/assets/fsm_visitor.png&quot; alt=&quot;FSM / Visitor relationship diagram&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-1&quot;&gt;Figure 1&lt;/a&gt;: FSM / Visitor relationship diagram.&lt;/p&gt;
+
+&lt;h3 id=&quot;game-state&quot;&gt;Game State&lt;/h3&gt;
+
+&lt;p&gt;The game state represents the totality of game data. This state may include
+game entities e.g. tank instances, the curves representing an entity property
+over time, as well as any other general data e.g. server status, the current
+game tick, etc.&lt;/p&gt;
+
+&lt;p&gt;A subset of the game state is broadcast per tick to all connected clients.&lt;/p&gt;
+
+&lt;h3 id=&quot;fsm-command-metadata&quot;&gt;FSM (Command Metadata)&lt;/h3&gt;
+
+&lt;p&gt;A command is represented with a finite state machine with a fully defined
+transition graph. For example, the move command consists of the &lt;code&gt;PENDING&lt;/code&gt;,
+&lt;code&gt;EXECUTING&lt;/code&gt;, &lt;code&gt;FINISHED&lt;/code&gt;, and &lt;code&gt;CANCELED&lt;/code&gt; states, with transitions&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;PENDING → EXECUTING
+PENDING → FINISHED
+PENDING → CANCELED
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;This command will have references to the underlying game state as part of the
+data struct, e.g.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;type MoveCommand struct {
+  serverStatus        *Status
+  positionCurve       Curve
+  nextPartialMoveTick float64
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The command may offer a set of utility functions to mutate the referenced
+subset of the game state, or its own internal state
+(e.g. &lt;code&gt;nextPartialMoveTick&lt;/code&gt;), but &lt;em&gt;must not mutate itself&lt;/em&gt;. The command manager
+must manually make the mutations.&lt;/p&gt;
+
+&lt;h4 id=&quot;virtual-state-transitions&quot;&gt;Virtual State Transitions&lt;/h4&gt;
+
+&lt;p&gt;The command metadata will be used to calculate the “real” state of the command
+at any given point in time – if we schedule a move command to occur ten ticks
+in the future, we want to make sure the command itself knows when it needs to
+execute. This alleviates processing logic that otherwise will need to be
+handled by the iterator examining the commands (which in our case is the move
+visitor).&lt;/p&gt;
+
+&lt;p&gt;See
+&lt;a href=&quot;https://blog.kevmo314.com/time-invariant-finite-state-machines.html&quot;&gt;Time Invariant Finite State Machines&lt;/a&gt;
+for more details.&lt;/p&gt;
+
+&lt;h4 id=&quot;api&quot;&gt;API&lt;/h4&gt;
+
+&lt;h5 id=&quot;func-c-command-id-id&quot;&gt;func (c Command) ID() ID&lt;/h5&gt;
+
+&lt;p&gt;The command may need to generate a UUID at init time – this ID will be used to
+check for duplicates of the command, and for calculating what commands of the
+same type may conflict with one another, e.g. two move commands on the same
+unit.&lt;/p&gt;
+
+&lt;h5 id=&quot;func-c-command-acceptv-visitor-error&quot;&gt;func (c Command) Accept(v Visitor) error&lt;/h5&gt;
+
+&lt;p&gt;A command must allow an entry point for the visitor. This is part of the
+&lt;a href=&quot;https://en.wikipedia.org/wiki/Visitor_pattern&quot;&gt;standard visitor pattern&lt;/a&gt; API.&lt;/p&gt;
+
+&lt;h5 id=&quot;func-c-command-state-state-error&quot;&gt;func (c Command) State() (State, error)&lt;/h5&gt;
+
+&lt;p&gt;A command will return its current, &lt;em&gt;virtual&lt;/em&gt; (i.e. calculated) state. This will
+be used by the caller to determine what actions (if any) should be taken at the
+current point in time.&lt;/p&gt;
+
+&lt;h5 id=&quot;func-c-command-tostate-error&quot;&gt;func (c Command) To(State) error&lt;/h5&gt;
+
+&lt;p&gt;A command will surface a way to transition between different states in the
+internal FSM. This function will error out if there is no valid transition path
+from the current internal virtual state to the target.&lt;/p&gt;
+
+&lt;h5 id=&quot;func-c-command-precedenced-command-bool&quot;&gt;func (c Command) Precedence(d Command) bool&lt;/h5&gt;
+
+&lt;p&gt;A command must know if it may be superseded by another higher-priority command.
+This function returns &lt;code&gt;true&lt;/code&gt; if the input Command arg is of lower priority
+(i.e. “c preceded d”).&lt;/p&gt;
+
+&lt;h4 id=&quot;chaining-fsms&quot;&gt;Chaining FSMs&lt;/h4&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://blog.downflux.com/2021/01/13/arbitrary-command-execution/assets/fsm_chaining.png&quot; alt=&quot;Chaining FSMs&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-2&quot;&gt;Figure 2&lt;/a&gt;: Chaining FSMs; note that a visitor may queue
+additional dependent flows, but never accesses the dependent FSM itself, nor
+the dependent flow visitor.&lt;/p&gt;
+
+&lt;p&gt;The command may be a part of a larger, more intricate chain of commands – an
+attack-move command consists of both chasing a target and actually attacking
+when the target is within range. This is a valid pattern.&lt;/p&gt;
+
+&lt;p&gt;The parent command in this case may also need to expose an API endpoint to
+allow the visitor to change this reference. In our implementation of the Chase
+visitor, we regularly cancel and replace the referenced Move command with a
+new destination – this pointer is set via&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;func (c ChaseCommand) SetMove(m MoveCommand) error
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;See &lt;a href=&quot;https://blog.downflux.com/2021/01/13/arbitrary-command-execution/#figure-2&quot;&gt;Figure 2&lt;/a&gt; for more details.&lt;/p&gt;
+
+&lt;h5 id=&quot;example&quot;&gt;Example&lt;/h5&gt;
+
+&lt;p&gt;Consider our Attack command; logically, we have a background task in which the
+attacker constantly chases the target; if the target is within attack range,
+we then signal to the Visitor this step is ready to execute&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;// Simplified API for brevity.
+func (c *AttackCommand) Status() Status {
+  if c.chaseCommand.Status() == CANCELED {
+    return CANCELED
+  }
+  if d(
+    c.source.Position(),
+    c.destination.Position()) &amp;lt; c.source.AttackRange() &amp;amp;&amp;amp; (
+      c.source.OffAttackCooldown()) {
+    return EXECUTING
+  }
+  return PENDING
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&quot;fsm-list&quot;&gt;FSM List&lt;/h3&gt;
+
+&lt;p&gt;An FSM list will keep track of all commands of a specific type (e.g. all Move
+commands). This list may be mutated by an arbitrary visitor (e.g. when a Chase
+visitor needs to spawn in a new Move command). The default access pattern is
+provided via the &lt;code&gt;Accept&lt;/code&gt; function.&lt;/p&gt;
+
+&lt;p&gt;N.B.: Technically this may be implemented as a simple slice, but our underlying
+implementation uses a map struct instead for fast queries.&lt;/p&gt;
+
+&lt;h4 id=&quot;api-1&quot;&gt;API&lt;/h4&gt;
+
+&lt;h5 id=&quot;func-l-list-clear-error&quot;&gt;func (l List) Clear() error&lt;/h5&gt;
+
+&lt;p&gt;At the beginning of a game tick, the list will be required to delete any
+references to &lt;code&gt;FINISHED&lt;/code&gt; or &lt;code&gt;CANCELED&lt;/code&gt;-state commands.&lt;/p&gt;
+
+&lt;p&gt;Any dependent commands which have references to these deleted commands will
+still have access to the data structs – in our Golang implementation, the
+underlying memory is not freed until the last reference is deleted.&lt;/p&gt;
+
+&lt;h5 id=&quot;func-l-list-mergem-list-error&quot;&gt;func (l List) Merge(m List) error&lt;/h5&gt;
+
+&lt;p&gt;Our engine implementation keeps two lists per command type – one for incoming
+user requests (the “cache”), and one as our source of truth (“source”). At the
+beginning of the game tick, after the source deletes canceled and finished
+commands, the cache will be merged into the source.&lt;/p&gt;
+
+&lt;p&gt;This merge may cancel some commands in the source, as user commands take
+priority; in this case, we will delete the reference to the canceled command,
+and replace it with the new user command. As in the case of the &lt;code&gt;Clear()&lt;/code&gt;
+function, the chained command(s) will still have access to the data of the
+deleted command.&lt;/p&gt;
+
+&lt;h5 id=&quot;func-l-list-appendc-command-error&quot;&gt;func (l List) Append(c Command) error&lt;/h5&gt;
+
+&lt;p&gt;The list will expose a generic way to add a new command.&lt;/p&gt;
+
+&lt;h5 id=&quot;func-l-list-acceptv-visitor-error&quot;&gt;func (l List) Accept(v Visitor) error&lt;/h5&gt;
+
+&lt;p&gt;The list will also be exposed to the visitor – this function usually only acts
+as an iterator wrapper around the tracked commands. Commands here may be
+mutated serially or concurrently, depending on the list implementation.&lt;/p&gt;
+
+&lt;h4 id=&quot;merge&quot;&gt;Merge&lt;/h4&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://blog.downflux.com/2021/01/13/arbitrary-command-execution/assets/fsm_list_merge.png&quot; alt=&quot;FSM List Merge&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-3&quot;&gt;Figure 3&lt;/a&gt;: FSM List merge operation.&lt;/p&gt;
+
+&lt;p&gt;As stated above, for each command type, we keep two FSM list instances. The
+cache is used for keeping track of client (e.g. player) input, while the
+source is used to keep track of the actual work items that need to be done.
+After we clear the stale commands from the source list, we will then merge in
+the cache – this allows us to atomically schedule the client input, and to
+override existing commands in the queue.&lt;/p&gt;
+
+&lt;h3 id=&quot;visitors&quot;&gt;Visitors&lt;/h3&gt;
+
+&lt;p&gt;The visitor is our execution phase in the game. As stated above, this is the
+standard visitor of the visitor pattern; however, the key difference here is
+that while many references to this pattern uses the visitor to mutate actual
+objects (game entities in our case), we have opted for an additional layer of
+indirection, and have the visitors mutate the &lt;em&gt;metadata&lt;/em&gt; instead. This allows
+us to have the opportunity to have a formalized definition for each command
+type, and greatly increases the scalability of our game as we add more and more
+commands to the execution model.&lt;/p&gt;
+
+&lt;h4 id=&quot;api-2&quot;&gt;API&lt;/h4&gt;
+
+&lt;h5 id=&quot;func-v-visitor-visit-a-agent-error&quot;&gt;func (v Visitor) Visit (a Agent) error&lt;/h5&gt;
+
+&lt;p&gt;The Visitor mutates the game state and the underlying command via the &lt;code&gt;Visit()&lt;/code&gt;
+function. This function generally&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;queries the command’s &lt;code&gt;State()&lt;/code&gt;, and&lt;/li&gt;
+  &lt;li&gt;decide what action to take based on the returned value.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;For example, the Move visitor will do a no-op if the Move command returns any
+state other than &lt;code&gt;EXECUTING&lt;/code&gt;. In the &lt;code&gt;EXECUTING&lt;/code&gt; phase, the visitor will&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;calculate a partial path for the entity,&lt;/li&gt;
+  &lt;li&gt;update the entity curve, and&lt;/li&gt;
+  &lt;li&gt;schedule when the next partial move should be calculated (via
+&lt;code&gt;MoveCommand.SchedulePartialMove(float64)&lt;/code&gt;).&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h4 id=&quot;chaining-commands&quot;&gt;Chaining Commands&lt;/h4&gt;
+
+&lt;p&gt;It is in the Visitor that any dependent flows for the visitor-specific command
+may be generated – e.g. the newly-created Move commands that make up the
+Chase-chain are created here.&lt;/p&gt;
+
+&lt;p&gt;In the case the visitor needs to create new commands, &lt;em&gt;the visitor will need a
+reference to the associated FSM List of the dependent command type&lt;/em&gt;. The
+visitor is responsible for scheduling the newly created command, and will
+schedule the command in the &lt;em&gt;source of truth&lt;/em&gt;, not the cache.&lt;/p&gt;
+
+&lt;p&gt;See &lt;a href=&quot;https://blog.downflux.com/2021/01/13/arbitrary-command-execution/#figure-2&quot;&gt;Figure 2&lt;/a&gt;; note that Visitor&lt;sub&gt;B&lt;/sub&gt; does not have a data
+dependency on FSM&lt;sub&gt;A&lt;/sub&gt; – setting this limitation greatly simplifies
+the separation of responsibilities between the visitor and the command
+metadata, and should allow for more scalability.&lt;/p&gt;
+
+&lt;p&gt;Also note that although we have said FSMs are read-only, there is a read-write
+dependency from FSM&lt;sub&gt;B&lt;/sub&gt; to FSM&lt;sub&gt;A&lt;/sub&gt;. This write operation is
+just a &lt;code&gt;Command.To(CANCELED)&lt;/code&gt; call in case we need to halt the operation, and
+should not be any other mutation.&lt;/p&gt;
+
+&lt;h5 id=&quot;example-1&quot;&gt;Example&lt;/h5&gt;
+
+&lt;p&gt;For our Attack command defined above, our visitor would query for the state,
+and mutate the game state:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-golang&quot;&gt;// Simplified API for brevity.
+func (v *AttackVisitor) Visit(c *AttackCommand) error {
+  if c.Status() != EXECUTING { return nil }
+  if c.Status() == EXECUTING {
+    c.Source().Attack()
+    c.Target().Damage(c.Source().Strength())
+    v.dirtyState.Add(c.Source(), c.Target())
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Note that neither the Attack command nor the visitor modifies the dependent
+Chase flow - this independent execution of commands is crucial for scalability.&lt;/p&gt;
+
+&lt;h4 id=&quot;dirty-state&quot;&gt;Dirty State&lt;/h4&gt;
+
+&lt;p&gt;In the case the Visitor updates the game state via a curve, or creates a new
+entity, it is responsible for updating the game’s dirty state list. This list
+keeps track of the broadcastable data per tick, and is reset at the beginning
+of every game tick. For more information, see the design doc.&lt;/p&gt;
+
+&lt;h2 id=&quot;work-estimates&quot;&gt;Work Estimates&lt;/h2&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Work Item&lt;/th&gt;
+      &lt;th&gt;Time Estimate&lt;/th&gt;
+      &lt;th&gt;Status&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement FSM interface&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement Move FSM&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement Produce FSM&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement Chase FSM&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement Attack FSM&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement Move Visitor&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement Produce Visitor&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement Chase Visitor&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement Attack Visitor&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement Client Move API&lt;/td&gt;
+      &lt;td&gt;1 day&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement Client Produce API&lt;/td&gt;
+      &lt;td&gt;1 day&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement Client Attack API&lt;/td&gt;
+      &lt;td&gt;1 day&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;demonstrate feasibility&lt;/td&gt;
+      &lt;td&gt;N/A&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;h2 id=&quot;see-also&quot;&gt;See Also&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://blog.kevmo314.com/time-invariant-finite-state-machines.html&quot;&gt;Time Invariant Finite State Machines&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+          <pubDate>Wed, 13 Jan 2021 00:00:00 -0800</pubDate>
+          <link>https://blog.downflux.com/2021/01/13/arbitrary-command-execution/</link>
+          <guid isPermaLink="true">https://blog.downflux.com/2021/01/13/arbitrary-command-execution/</guid>
+
+          
+            <category>design doc</category>
+          
+            <category>server</category>
+          
+            <category>commands</category>
+          
+
+          
+
+        </item>
+      
+
+    
+
+      
+
+      
+        
+
+        <item>
+
+          <title>Client Disconnect Handling in DownFlux</title>
+          <description>&lt;p&gt;Client-Server Networking Model for a Large-Scale RTS&lt;/p&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th style=&quot;text-align: left&quot;&gt;Status&lt;/th&gt;
+      &lt;th style=&quot;text-align: left&quot;&gt;draft&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Author(s)&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;minke.zhang@gmail.com&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Contributor(s)&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt; &lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Last Updated&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;2020-11-16&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;h2 id=&quot;goals&quot;&gt;Goals&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;handle client reconnects&lt;/li&gt;
+  &lt;li&gt;resolve game state cleanly&lt;/li&gt;
+  &lt;li&gt;deal with connection spam&lt;/li&gt;
+  &lt;li&gt;detect client / server network outages&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;background&quot;&gt;Background&lt;/h2&gt;
+
+&lt;p&gt;DownFlux is an ongoing open-source RTS game built from scratch (rather rashly).
+Because DownFlux is not built on top of any existing &lt;em&gt;gaming&lt;/em&gt; engine, we need
+to design a way for client-server network connections to be resilient to
+network flakiness.&lt;/p&gt;
+
+&lt;h2 id=&quot;overview&quot;&gt;Overview&lt;/h2&gt;
+
+&lt;p&gt;Downflux is using a client-server model approach for networking, with gRPC
+serving as the API layer. The client issues player commands (Move, Attack,
+etc.) via blocking API, whereas the server passes game state change through a
+persistent stream. During the normal course of a game, it is possible that the
+client may experience transient network outages – this design doc focuses on
+one implementation of client disconnect / reconnect logic which can handle this
+in a graceful and scalable way.&lt;/p&gt;
+
+&lt;h3 id=&quot;streamdata-api&quot;&gt;StreamData API&lt;/h3&gt;
+
+&lt;p&gt;The server communicates with the client via the &lt;code&gt;StreamData&lt;/code&gt; RPC endpoint; each
+message sent along this API contains a list of entities and a separate list of
+curves, as well as the server time at which the message was generated. These
+data points communicate the game state &lt;em&gt;delta&lt;/em&gt; between subsequent points in
+time; by merging all data messages, the client will have the complete game
+state.&lt;/p&gt;
+
+&lt;p&gt;These messages are sent once per server tick. To save on bandwidth, a message
+will be sent only if a delta exists – if both the list of entities and curve
+deltas is empty, then the server will skip sending the message for that tick.&lt;/p&gt;
+
+&lt;h3 id=&quot;game-state-monotonicity&quot;&gt;Game State Monotonicity&lt;/h3&gt;
+
+&lt;p&gt;The monotonically increasing&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2020/11/16/client-disconnect-handling-in-downflux/#fn:1&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt; game state &lt;em&gt;S&lt;/em&gt; may be totally represented by
+the set &lt;em&gt;E&lt;/em&gt; of game entities and &lt;em&gt;C&lt;/em&gt; the set of curves representing game
+metrics evolving over time. We represent the merging of an existing, valid
+game state with an incoming StreamData message as&lt;/p&gt;
+
+&lt;p&gt;S’ := S ∪ ΔS == (E ∪ ΔE, C ∪ ΔC)&lt;/p&gt;
+
+&lt;p&gt;The set of entities here is an &lt;em&gt;append-only&lt;/em&gt; mathematical set, i.e. there are
+no duplicate elements. Because entities are uniquely identified by a UID, we
+can send along just the newly generated entities per server tick.&lt;/p&gt;
+
+&lt;p&gt;A curve is uniquely specified by its&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;parent entity UID,&lt;/li&gt;
+  &lt;li&gt;the entity property this curve represents (e.g. location, health, etc.),&lt;/li&gt;
+  &lt;li&gt;and the last time the curve was updated by the server.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;When we merge two curves, the data generated by the most recently-updated curve
+takes precedence – that is, if the older curve and newer curve have
+conflicting extrapolated data, we replace the older curve’s extrapolated data.
+If the newer curve does not have information on a specific time interval, we
+keep the older curve’s data. In this way, we can guarantee that the curve
+itself is idempotent under merge requests (of a specific destination curve),
+and the prediction of the curve over time becomes more accurate (since we’re
+merging only new predictions).&lt;/p&gt;
+
+&lt;p&gt;We can formalize these definitions as&lt;/p&gt;
+
+&lt;p&gt;S ≤ S’ ⇔ E ⊆ E’ ^ C ≤ C’&lt;/p&gt;
+
+&lt;p&gt;We can compare the curves by comparing the server tick.&lt;/p&gt;
+
+&lt;h3 id=&quot;client-work&quot;&gt;Client Work&lt;/h3&gt;
+
+&lt;p&gt;The game client will treat the incoming &lt;code&gt;StreamData&lt;/code&gt; messages as game state
+deltas and merge them into the local state via the process described above;
+because the end user (player) of the client only cares about the current tick,
+any data older than the current server tick may be thrown out&lt;sup id=&quot;fnref:2&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2020/11/16/client-disconnect-handling-in-downflux/#fn:2&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;, and it’s
+okay if the old data is invalid.&lt;/p&gt;
+
+&lt;p&gt;Therefore, we can see a framework for leveraging the game state delta as a
+game re-sync tool.&lt;/p&gt;
+
+&lt;h2 id=&quot;detailed-implementation&quot;&gt;Detailed Implementation&lt;/h2&gt;
+
+&lt;h3 id=&quot;disconnect-detection&quot;&gt;Disconnect Detection&lt;/h3&gt;
+
+&lt;p&gt;We can implement client / server disconnect detection via the gRPC
+&lt;a href=&quot;https://github.com/grpc/grpc/blob/master/doc/keepalive.md&quot;&gt;&lt;code&gt;keepalive flags&lt;/code&gt;&lt;/a&gt;.
+These may be specified on the server at start up time, and on the client at
+connect time. gRPC supports heartbeat messages sent at specific intervals, and
+allows the underlying channel to auto-close when a heartbeat timeout occurs.&lt;/p&gt;
+
+&lt;p&gt;Because this is handled at the gRPC layer, we may abstract that away in the
+game &lt;code&gt;executor.Executor&lt;/code&gt; instance, as long as we ensure that the gRPC server -
+executor will always receive incoming &lt;code&gt;StreamDataResponse&lt;/code&gt; messages, e.g. via a
+server-local slice object per client.&lt;/p&gt;
+
+&lt;h4 id=&quot;server&quot;&gt;Server&lt;/h4&gt;
+
+&lt;p&gt;Once the client channel is closed, the client-side &lt;code&gt;StreamData&lt;/code&gt; gRPC endpoint
+will also terminate.&lt;/p&gt;
+
+&lt;h5 id=&quot;grpc&quot;&gt;gRPC&lt;/h5&gt;
+
+&lt;p&gt;The gRPC server on startup will set the flags specified in
+&lt;a href=&quot;https://github.com/grpc/grpc/blob/master/doc/keepalive.md&quot;&gt;keepalive.md&lt;/a&gt; and
+the &lt;a href=&quot;https://pkg.go.dev/google.golang.org/grpc/keepalive&quot;&gt;Golang module&lt;/a&gt; so
+that&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;the client may periodically send keepalive messages;&lt;/li&gt;
+  &lt;li&gt;the server &lt;em&gt;will&lt;/em&gt; send periodic keepalive messages; and&lt;/li&gt;
+  &lt;li&gt;there is a definite, non-infinite timeout for these server-initiated
+keepalives, after which
+    &lt;ol&gt;
+      &lt;li&gt;the gRPC stream will be closed, and&lt;/li&gt;
+      &lt;li&gt;the gRPC server will mark the underlying executor Client object as dirty,
+which then instructs the component to teardown the client channel and
+mark it as in need of a sync.&lt;/li&gt;
+    &lt;/ol&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;The gRPC server will implement a client-specific local message queue and
+listener Goroutine – these constructs will listen on the executor client
+channel and enqueue any messages sent along it, guaranteeing that the channel
+will never be blocked.&lt;/p&gt;
+
+&lt;h5 id=&quot;executor&quot;&gt;Executor&lt;/h5&gt;
+
+&lt;p&gt;The executor will provide a &lt;code&gt;StopClientStreamError&lt;/code&gt; function, which will be
+used to teardown the client channel struct and mark the associated client as
+out of sync with the game state.&lt;/p&gt;
+
+&lt;h6 id=&quot;client-state-metadata&quot;&gt;Client State Metadata&lt;/h6&gt;
+
+&lt;p&gt;The executor will model a client connection in the form of a transition
+diagram –&lt;/p&gt;
+
+&lt;p&gt;The executor will keep an executor-specific client metadata object, with a flow
+diagram as defined in &lt;a href=&quot;https://blog.downflux.com/2020/11/16/client-disconnect-handling-in-downflux/#figure-1&quot;&gt;Figure 1&lt;/a&gt;. A metadata object
+will store a Golang channel object, used to send data to the gRPC server.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://blog.downflux.com/2020/11/16/client-disconnect-handling-in-downflux/assets/network_client_flow_dag.png&quot; alt=&quot;Executor client flow diagram&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a name=&quot;figure-1&quot;&gt;Figure 1&lt;/a&gt;: Executor client flow diagram.&lt;/p&gt;
+
+&lt;p&gt;We are defining the states &lt;code&gt;NEW&lt;/code&gt;, &lt;code&gt;DESYNCED&lt;/code&gt;, &lt;code&gt;OK&lt;/code&gt;, and &lt;code&gt;TEARDOWN&lt;/code&gt; as follows:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;A client is in the &lt;code&gt;NEW&lt;/code&gt; state when
+    &lt;ul&gt;
+      &lt;li&gt;the client is first created, or&lt;/li&gt;
+      &lt;li&gt;when a network error is detected while streaming game state.&lt;/li&gt;
+    &lt;/ul&gt;
+
+    &lt;p&gt;In this state, the channel does not exist, and no data will be broadcasted to
+this client.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;A client enters the &lt;code&gt;DESYNCED&lt;/code&gt; state once a call to the gRPC &lt;code&gt;StreamData&lt;/code&gt;
+endpoint is made – in this state, the channel is created, and the client is
+marked as needing the full game state update. The executor will provide the
+appropriate data upon the next tick to the client channel.&lt;/li&gt;
+  &lt;li&gt;A client is in the steady &lt;code&gt;OK&lt;/code&gt; state once the full state has been sent.
+Future messages sent along this channel are state deltas, as defined above.&lt;/li&gt;
+  &lt;li&gt;A client enters the &lt;code&gt;TEARDOWN&lt;/code&gt; state once the game shuts down – at this
+point, the client may not reconnect, and the channel is permanently closed.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;resync&quot;&gt;Resync&lt;/h3&gt;
+
+&lt;p&gt;With our flow diagram, it becomes apparent that the client upon a server
+disconnect will only need to reissue a &lt;code&gt;StreamData&lt;/code&gt; gRPC call with its stored
+internal client ID. The gRPC server will handle the reconnect by marking the
+client as &lt;code&gt;DESYNCED&lt;/code&gt;, just as it would have done upon the initial stream
+request. The next message sent from the server will be the full game state.&lt;/p&gt;
+
+&lt;h2 id=&quot;footnotes&quot;&gt;Footnotes&lt;/h2&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;This is not necessarily the right wording, but there doesn’t seem to be
+ such a phrase which describes our game state assumptions. &lt;a href=&quot;https://blog.downflux.com/2020/11/16/client-disconnect-handling-in-downflux/#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;This is not true for the case of the replay client, but that should be
+ connected to the server locally, where network flakiness is not an issue. &lt;a href=&quot;https://blog.downflux.com/2020/11/16/client-disconnect-handling-in-downflux/#fnref:2&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;
+</description>
+          <pubDate>Mon, 16 Nov 2020 00:00:00 -0800</pubDate>
+          <link>https://blog.downflux.com/2020/11/16/client-disconnect-handling-in-downflux/</link>
+          <guid isPermaLink="true">https://blog.downflux.com/2020/11/16/client-disconnect-handling-in-downflux/</guid>
+
+          
+            <category>design doc</category>
+          
+            <category>network</category>
+          
+
+          
+
+        </item>
+      
+
+    
+
+      
+
+      
+        
+
+        <item>
+
+          <title>DownFlux Client Design Doc</title>
+          <description>&lt;p&gt;Client-Facing Engine Design&lt;/p&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th style=&quot;text-align: left&quot;&gt;Status&lt;/th&gt;
+      &lt;th style=&quot;text-align: left&quot;&gt;Draft&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Author(s)&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;minke.zhang@gmail.com&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Contributors&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt; &lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Last Updated&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;2020-10-23&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;h2 id=&quot;objective&quot;&gt;Objective&lt;/h2&gt;
+
+&lt;p&gt;Outline the core mechanics necessary for rendering the
+&lt;a href=&quot;https://blog.downflux.com/2020/10/23/downflux-client-design-doc/server.md&quot;&gt;server&lt;/a&gt;-calculated game state to the players.&lt;/p&gt;
+
+&lt;h2 id=&quot;background&quot;&gt;Background&lt;/h2&gt;
+
+&lt;p&gt;DownFlux is a collaborative RTS.&lt;/p&gt;
+
+&lt;h2 id=&quot;overview&quot;&gt;Overview&lt;/h2&gt;
+
+&lt;p&gt;The client will consist of two parts – the actual rendering engine (e.g.
+drawing tanks and units on screen) and the client API component that does the
+lower level communications with the server.&lt;/p&gt;
+
+&lt;h2 id=&quot;detailed-design&quot;&gt;Detailed Design&lt;/h2&gt;
+
+&lt;h3 id=&quot;client&quot;&gt;Client&lt;/h3&gt;
+
+&lt;p&gt;The API client is tasked with the lower-level communications with the server,
+and forwards the transformed user inputs given by the &lt;a href=&quot;https://blog.downflux.com/2020/10/23/downflux-client-design-doc/#renderer&quot;&gt;Renderer&lt;/a&gt;.
+The client also runs a daemon thread to process incoming data provided by the
+&lt;code&gt;StreamCurves&lt;/code&gt; endpoint.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-csharp&quot;&gt;class APIClient {
+  public string ID;  // Client ID used to identify the player to the server.
+
+  // Invokes AddClient and announces to server the current tick of the client
+  // (in case of reconnection)
+  public string Connect(string tickID);
+
+  // Returns the current buffer of recieved data from server stream. Will clear
+  // buffer after invocation.
+  public StreamData Data;
+
+  public void Move(
+    string tickID,
+    List&amp;lt;string&amp;gt; entityIDs,
+    Position destination,
+    MoveType moveType,
+  );
+
+  public async Task StreamCurvesLoop(string tickID);
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&quot;renderer&quot;&gt;Renderer&lt;/h3&gt;
+
+&lt;p&gt;The rendering engine will process actual user input (key presses, mouse
+clicks, etc.), transform them into useful game intents, and forward them via
+the API client to the server.&lt;/p&gt;
+
+&lt;p&gt;The engine will also be tasked with the core loop of processing game state and
+displaying that in some form to the user.&lt;/p&gt;
+
+&lt;h4 id=&quot;core-loop&quot;&gt;Core Loop&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-csharp&quot;&gt;using EntityID = string;
+using CurveID = string;
+
+public Dictionary&amp;lt;EntityID, Entity&amp;gt; EntityLookup;
+public Dictionary&amp;lt;CurveID, Curve&amp;gt; CurveLookup;
+
+public Queue&amp;lt;PlayerAction&amp;gt; Actions;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h5 id=&quot;tick-rate&quot;&gt;Tick Rate&lt;/h5&gt;
+
+&lt;p&gt;The server and rendering engine will run at differing tick rates – because
+we aim to minimize the network traffic for communicating game state, the
+data sent to the client will be much slower than the rate at which information
+needs to be redrawn. For example, the canonical server tick rate is at ~10Hz
+(from server design), but obviously for games, the renderer needs to draw at a
+rate of 30 - 60Hz, if not higher.&lt;/p&gt;
+
+&lt;p&gt;To account for this tick discrepancy, the renderer will interpolate the server
+curve data for the relevant partial server tick times.&lt;/p&gt;
+
+&lt;p&gt;The renderer may also need different curve rates for different phases in the
+core loop – for example, if the server only broadcasts game state at 10Hz, the
+renderer doesn’t need to poll for every frame (60Hz).&lt;/p&gt;
+
+&lt;h6 id=&quot;server-reconciliation&quot;&gt;Server Reconciliation&lt;/h6&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-csharp&quot;&gt;public static TickRate = 10;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The renderer will need to query the API client regularly to update its internal
+curve state and for new entity announcements. The API client holds the actual
+server stream.&lt;/p&gt;
+
+&lt;p&gt;If any new data is provded from the API client (whether new entity
+announcements or curve updates), the renderer will update &lt;code&gt;EntityLookup&lt;/code&gt; and
+&lt;code&gt;CurveLookup&lt;/code&gt;, either with &lt;code&gt;Curve.ReplaceTail&lt;/code&gt; or by creating a new entity
+row.&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;N.B.&lt;/em&gt;: &lt;code&gt;EntityLookup&lt;/code&gt; and &lt;code&gt;CurveLookup&lt;/code&gt; are add only sets. If an entity should 
+no longer be rendered, it will be marked as tombstoned instead.&lt;/p&gt;
+
+&lt;h6 id=&quot;rendering&quot;&gt;Rendering&lt;/h6&gt;
+
+&lt;p&gt;The renderer will iterate through the set of curves and draw appropriate data
+for the values interpolated at the current client tick time.&lt;/p&gt;
+
+&lt;p&gt;The server will also need to iterate through the &lt;code&gt;Actions&lt;/code&gt; queue and render any
+client-only changes.&lt;/p&gt;
+
+&lt;h6 id=&quot;process-player-input&quot;&gt;Process Player Input&lt;/h6&gt;
+
+&lt;p&gt;TODO(minkezhang): Is this async?&lt;/p&gt;
+
+&lt;p&gt;At this phase, the renderer will take note of the current player actions (e.g.
+physical clicks, mouse drags, etc.), transforms them into a usable struct, and
+append them to the &lt;code&gt;PlayerAction&lt;/code&gt; queue.&lt;/p&gt;
+
+&lt;h6 id=&quot;process-player-actions&quot;&gt;Process Player Actions&lt;/h6&gt;
+
+&lt;p&gt;Depending on the action specified (e.g. &lt;code&gt;Move&lt;/code&gt; or &lt;code&gt;ScrollViewport&lt;/code&gt;), the
+may need to communicate with the server – this phase is leaving room for
+calling out action-specific handlers&lt;/p&gt;
+
+&lt;p&gt;The renderer will call the server (via the API client) with appropriate
+commands at this time.&lt;/p&gt;
+
+&lt;h2 id=&quot;see-also&quot;&gt;See Also&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://blog.downflux.com/2020/10/23/downflux-client-design-doc/server.md&quot;&gt;DownFlux Networking Design&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+          <pubDate>Fri, 23 Oct 2020 00:00:00 -0700</pubDate>
+          <link>https://blog.downflux.com/2020/10/23/downflux-client-design-doc/</link>
+          <guid isPermaLink="true">https://blog.downflux.com/2020/10/23/downflux-client-design-doc/</guid>
+
+          
+            <category>design doc</category>
+          
+            <category>client</category>
+          
+
+          
+
+        </item>
+      
+
+    
+
+      
+
+      
+        
+
+        <item>
+
+          <title>DownFlux Networking Design</title>
+          <description>&lt;p&gt;Client-Server Model for a Large-Scale RTS&lt;/p&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th style=&quot;text-align: left&quot;&gt;Status&lt;/th&gt;
+      &lt;th style=&quot;text-align: left&quot;&gt;final&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Author(s)&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;minke.zhang@gmail.com&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Contributor(s)&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt; &lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;Last Updated&lt;/td&gt;
+      &lt;td style=&quot;text-align: left&quot;&gt;2020-10-09&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;h2 id=&quot;objective&quot;&gt;Objective&lt;/h2&gt;
+
+&lt;p&gt;Design a communications model between a small number of clients concurrently
+mutating a complex RTS game state.&lt;/p&gt;
+
+&lt;h2 id=&quot;background&quot;&gt;Background&lt;/h2&gt;
+
+&lt;p&gt;Relevant to this document, DownFlux will be an RTS game for a small number
+(~10) of players within normal RTS parameters. We are exploring different
+networking models for the game, and have proposed the following design as a
+potential implementation of client-state interaction.&lt;/p&gt;
+
+&lt;h2 id=&quot;overview&quot;&gt;Overview&lt;/h2&gt;
+
+&lt;h3 id=&quot;assumptions&quot;&gt;Assumptions&lt;/h3&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Metric&lt;/th&gt;
+      &lt;th&gt;Estimated Bound&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Players&lt;/td&gt;
+      &lt;td&gt;10&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Controllable Entities&lt;/td&gt;
+      &lt;td&gt;1k&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Map Size&lt;/td&gt;
+      &lt;td&gt;1k x 1k tiles&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Server Tick Rate&lt;/td&gt;
+      &lt;td&gt;10Hz (see &lt;a href=&quot;https://www.reddit.com/r/starcraft/comments/8q0jka/e0fhawd?utm_source=share&amp;amp;utm_medium=web2x&amp;amp;context=3&quot;&gt;justification&lt;/a&gt;)&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Network Latency&lt;/td&gt;
+      &lt;td&gt;100ms&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Network Bandwidth&lt;/td&gt;
+      &lt;td&gt;1Mbps / player (see &lt;a href=&quot;https://gamedev.stackexchange.com/a/96184&quot;&gt;justification&lt;/a&gt;)&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;h2 id=&quot;related-work&quot;&gt;Related Work&lt;/h2&gt;
+
+&lt;p&gt;A list of historically relevant papers and articles can be found in the
+&lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/../brainstorm/networking.md&quot;&gt;DownFlux docs repo&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;infrastructure&quot;&gt;Infrastructure&lt;/h2&gt;
+
+&lt;p&gt;The networking model will be a client-server model, as opposed to the more
+commonly implemented lockstep framework used in most RTS games. We’ve decided
+that this should dramatically simplify the design, and dodge around tricky
+issues like creating a consistency model for a fully connected P2P system from
+scratch. One of the main benefits of the lockstep model is saving on
+computation and bandwidth costs (on the centralized server)&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fn:1&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt;, but
+modern consumer processing power and bandwidth should be enough to handle the
+workload.&lt;/p&gt;
+
+&lt;p&gt;The client consists of a renderer&lt;sup id=&quot;fnref:2&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fn:2&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt; and an API component, with the
+API component sending player commands to the server, e.g. “build barracks
+here”, “attack enemy infantry”, “use special ability”, etc.&lt;/p&gt;
+
+&lt;p&gt;The server consists of two message queues (input and output), and a core loop
+which handles the burdensome task of simulating the game state. The input queue
+regularly issues a list of player-issued messages to the core loop, sorted by
+the server clock time. The core loop then takes these messages and runs through
+an internal subprocess order in which these messages and the existing game
+state are taken as input. A list of output messages will be then piped to the
+outgoing queue, which will fire the back to the client immediately, along with
+information on when the messages should be rendered. The client will merge
+these messages into the existing game state to be picked up by the rendering
+component.&lt;/p&gt;
+
+&lt;h2 id=&quot;detailed-design&quot;&gt;Detailed Design&lt;/h2&gt;
+
+&lt;h3 id=&quot;types&quot;&gt;Types&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code&gt;type ClientID, EntityID, CurveID string
+
+type TickID string
+type Tick float64
+
+type Entity interface {
+    ID() EntityID
+    Curve(t (HP|PRIMARY_COOLDOWN|...)) CurveID
+}
+
+type Curve interface {
+    ID() CurveID
+    Type() (LINEAR|STEP|PULSE|...)
+    Parent() EntityID
+    Tick(float64) Tick
+    Value(Tick) float64
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&quot;client&quot;&gt;Client&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code&gt;CURRENT_TICK_ID TickID = &quot;&quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&quot;api-component&quot;&gt;API Component&lt;/h4&gt;
+
+&lt;p&gt;Breaking down the command that will be issued to the server, we can broadly
+speculate this would include&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;code&gt;Build(c Coordinate, t (BARRACKS|REFINERY|...))&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code&gt;Ping(c Coordinate, t (ATTACK|GUARD|...))&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code&gt;Move(entity_id string, c Coordinate, t (NORMAL|REVERSE|ATTACK_MOVE|GUARD|...))&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code&gt;Attack(entity_id, target_entity_id string)&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code&gt;UseAbility(entity_id, target_entity_id string, c Coordinate, t (PRIMARY|SECONDARY|ULTIMATE))&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Each API call will add an additional &lt;code&gt;CURRENT_TICK_KEY&lt;/code&gt; to each message when
+sending the message to the server.&lt;/p&gt;
+
+&lt;h4 id=&quot;server&quot;&gt;Server&lt;/h4&gt;
+
+&lt;p&gt;The server simulates the entire game state and facilitates player-player
+interaction (e.g. combat). At the heart of the server is a linear game loop
+consisting of &lt;em&gt;phases&lt;/em&gt;. Phases are run serially, but logic within each phase
+should exploit concurrency where possible.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;SERVER_TICK_RATE int = 10
+CURRENT_TICK Tick = 0  // At 60Hz, we will need to run the game for
+                       // 400+ days before encountering overflow
+CURRENT_TICK_ID TickID = &quot;&quot;
+TICK_ID_LOOKUP map[Tick]TickID = nil  // length TICK_ID_WINDOW_SIZE
+TICK_ID_WINDOW_SIZE int = 2  // Number of ticks in the past the
+                             // server will accept as valid (initial)
+                             // input
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&quot;new-tick-phase&quot;&gt;New Tick Phase&lt;/h4&gt;
+
+&lt;p&gt;This phase is a trivial subroutine which&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;increments &lt;code&gt;CURRENT_TICK&lt;/code&gt;,&lt;/li&gt;
+  &lt;li&gt;generates a new &lt;code&gt;CURRENT_TICK_ID&lt;/code&gt;, and&lt;/li&gt;
+  &lt;li&gt;update &lt;code&gt;TICK_ID_LOOKUP&lt;/code&gt; with the new data, as well as dropping the oldest
+row&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h4 id=&quot;input-queue-phase&quot;&gt;Input Queue Phase&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code&gt;CLIENT_RECENT_TICK map[ClientID]Tick = nil
+MESSAGE_QUEUE []PlayerCommand = nil
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The input phase keeps a buffer of incoming player messages. The buffer is
+sorted by the received timestamp of the server.&lt;/p&gt;
+
+&lt;p&gt;For each incoming message, the input phase will do some basic precondition
+tests:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;if message has an embedded &lt;code&gt;TickID&lt;/code&gt; which does not show up in the keys of
+&lt;code&gt;TICK_ID_LOOKUP&lt;/code&gt;, discard message and relay error to sender;&lt;/li&gt;
+  &lt;li&gt;then, if message has an embedded &lt;code&gt;TickID&lt;/code&gt; corresponding to a &lt;code&gt;Tick&lt;/code&gt; &lt;em&gt;before&lt;/em&gt;
+the &lt;code&gt;Tick&lt;/code&gt; found in &lt;code&gt;CLIENT_RECENT_TICK&lt;/code&gt;, discard message and relay error to
+sender;&lt;/li&gt;
+  &lt;li&gt;then update the client’s &lt;code&gt;CLIENT_RECENT_TICK&lt;/code&gt; entry with the corresponding
+&lt;code&gt;Tick&lt;/code&gt; and enqueue the message&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;At the &lt;strong&gt;beginning&lt;/strong&gt; of each tick, the queue will&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;discard duplicate messages,&lt;/li&gt;
+  &lt;li&gt;log queue alongside &lt;code&gt;CURRENT_TICK&lt;/code&gt;,&lt;/li&gt;
+  &lt;li&gt;sent off to the core loop for processing.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h4 id=&quot;output-queue-phase&quot;&gt;Output Queue Phase&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code&gt;MESSAGE_QUEUE []Curves = nil
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The output queue keeps a buffer of outgoing messages to each player. An
+outgoing message may either be an entity mutation (e.g. a creating or
+destroying a building or unit), or a curve&lt;sup id=&quot;fnref:6&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fn:6&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;3&lt;/a&gt;&lt;/sup&gt; mutation (e.g.
+altering a path, starting an attack, etc.).&lt;/p&gt;
+
+&lt;p&gt;For each player, we will need to&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;filter the outgoing messages by the player POV, i.e. don’t broadcast
+stealthed units or units under the fog of war, and&lt;/li&gt;
+  &lt;li&gt;filter any curve message by the player POV, i.e. don’t show a position curve
+(movement) that goes 50 ticks in the future if the position of the unit will
+exit the player POV; we can optionally skip this step if the domain of the
+curve extends into the future only a little bit (e.g. less than 1s of
+rendering time)&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;This filter step can be a no-op for now while we implement everything else, but
+if we do not enable filtering, the player can exploit the additional
+information in the form of map hacks.&lt;/p&gt;
+
+&lt;p&gt;At the &lt;strong&gt;end&lt;/strong&gt; of the tick, the output phase will&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;log unfiltered queue with &lt;code&gt;CURRENT_TICK&lt;/code&gt;,&lt;/li&gt;
+  &lt;li&gt;send players their respective messages, along with the new &lt;code&gt;CURRENT_TICK_ID&lt;/code&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h4 id=&quot;core-loop-phase&quot;&gt;Core Loop Phase&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code&gt;TRIGGER_QUEUE map[Tick]CurveID = nil
+ENTITY_LOOKUP map[EntityID]Entity = nil  // Entity.Curves() is a list
+                                         // of CurveIDs
+CURVE_LOOKUP map[CurveID]Curve = nil  // Curve.Parent() is a single
+                                      // EntityID
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The core loop is tasked with updating the actual game state, including editing
+the map terrain and mutating the curves. This is a heavy subroutine.&lt;/p&gt;
+
+&lt;h5 id=&quot;delete-entities&quot;&gt;Delete Entities&lt;/h5&gt;
+
+&lt;p&gt;For the current server tick, we check the &lt;code&gt;TRIGGER_QUEUE&lt;/code&gt;&lt;sup id=&quot;fnref:7&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fn:7&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;4&lt;/a&gt;&lt;/sup&gt; for any
+curves that have significant effects, e.g. setting health to 0. For these
+curves, we need to&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;delete the parent entity (e.g. structure or unit)&lt;/li&gt;
+  &lt;li&gt;delete the row from the queue&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h5 id=&quot;create-entities&quot;&gt;Create Entities&lt;/h5&gt;
+
+&lt;p&gt;New structures and units may be instructed to be built, either by a player
+command (new structure) or when a production facility finishes production (unit
+ready). For the former, we will read from the message queue, whereas the latter
+will need to be checked against &lt;code&gt;TRIGGER_QUEUE&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;New entities will need to be added to the &lt;code&gt;ENTITY_LOOKUP&lt;/code&gt; master list.&lt;/p&gt;
+
+&lt;p&gt;For buildings which have a set construction time, we will&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;generate a new curve for the new entity representing when the structure may
+be used (e.g. start producing units),&lt;/li&gt;
+  &lt;li&gt;add the curve to the output queue&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h5 id=&quot;update-curves&quot;&gt;Update Curves&lt;/h5&gt;
+
+&lt;p&gt;Each subphase of curve mutation may be done concurrently.&lt;/p&gt;
+
+&lt;h6 id=&quot;collision-detection&quot;&gt;Collision Detection&lt;/h6&gt;
+
+&lt;p&gt;We need to check if any entities (units, buildings, projectiles, crates, etc.)
+overlap hitboxes – if they do, we need to resolve any actions that may occur
+(taking damage, grabbing upgrade, redo pathing, etc.). For entities which
+require deletion (e.g. projectiles and crates), add to &lt;code&gt;TRIGGER_QUEUE&lt;/code&gt; – do
+not delete in this step.&lt;/p&gt;
+
+&lt;p&gt;Collision detection may be implemented via
+&lt;a href=&quot;https://gamedev.stackexchange.com/q/48565&quot;&gt;QuadTree&lt;/a&gt;, but can be null-op for
+now. This phase may possibly support being done asynchronously by a separate
+process in the background.&lt;/p&gt;
+
+&lt;h6 id=&quot;pathing&quot;&gt;Pathing&lt;/h6&gt;
+
+&lt;p&gt;For this phase, we will read from the message queue and update / create curves
+with new paths (and add to the output queue). This may&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;be done in parallel, and&lt;/li&gt;
+  &lt;li&gt;is abstracted away from the actual implementation of pathfinding and may be
+either generated by HPF&lt;sup id=&quot;fnref:3&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fn:3&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;5&lt;/a&gt;&lt;/sup&gt; or flow fields&lt;sup id=&quot;fnref:4&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fn:4&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;6&lt;/a&gt;&lt;/sup&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;If flow fields are used for pathfinding, the simulation for steering forces are
+all simulated on the server.&lt;/p&gt;
+
+&lt;h6 id=&quot;attack-resolution&quot;&gt;Attack Resolution&lt;/h6&gt;
+
+&lt;p&gt;Attacks from the input queue will need to be processed and aggregated. For each
+attack command from the queue, we will need to find the target entity and
+connect the curve with the target entity. This will be in the form of an HP
+curve for the target entity, which itself is an aggregated curve formed by the
+summation of all attack (and heal) curves targeting the entity.&lt;/p&gt;
+
+&lt;p&gt;If the HP curve has changed, add / update the &lt;code&gt;TRIGGER_QUEUE&lt;/code&gt; row for when the
+HP curve reaches 0&lt;/p&gt;
+
+&lt;p&gt;Any updated curves will need to be added to the output queue.&lt;/p&gt;
+
+&lt;h5 id=&quot;ability-resolution&quot;&gt;Ability Resolution&lt;/h5&gt;
+
+&lt;p&gt;Abilities like shields, speed boosts, etc. will have associated curves and must
+be updated and added to the output queue.&lt;/p&gt;
+
+&lt;h2 id=&quot;caveats&quot;&gt;Caveats&lt;/h2&gt;
+
+&lt;h3 id=&quot;tick-rate-tuning&quot;&gt;Tick Rate Tuning&lt;/h3&gt;
+
+&lt;p&gt;The server will have significant impact on the network latency in this model –
+if we assume (per &lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#assumptions&quot;&gt;Assumptions&lt;/a&gt;) a 100ms client-server travel
+time, and that the server itself will take another 100ms (at 10Hz), our total
+end-to-end latency is 300ms. While it may not matter much ultimately in the
+game results&lt;sup id=&quot;fnref:5&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fn:5&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;7&lt;/a&gt;&lt;/sup&gt;, we will still need to employ around 20 frames of
+&lt;a href=&quot;https://www.gabrielgambetta.com/client-side-prediction-server-reconciliation.html&quot;&gt;client-side prediction&lt;/a&gt;
+to smooth out user input. How fast can we make the server tick rate to cut down
+on the minimal latency?&lt;/p&gt;
+
+&lt;h3 id=&quot;client-api-component&quot;&gt;Client API Component&lt;/h3&gt;
+
+&lt;p&gt;We could alternatively consolidate &lt;code&gt;Move&lt;/code&gt;, &lt;code&gt;Attack&lt;/code&gt;, and &lt;code&gt;UseAbility&lt;/code&gt; into more
+general API endpoints:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;code&gt;EntityTargetAbility(entity_id, target_entity_id string, t (MOVE|REVERSE|ATTACK_MOVE|ATTACK|PRIMARY|SECONDARY|...))&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code&gt;EntityTargetAoE(entity_id string, c Coordinate, t (GUARD|PRIMARY|SECONDARY|...)&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;We decided this is needlessly generic and will create more problems server side
+in decoding the intent of the API than it solves in a unified API.&lt;/p&gt;
+
+&lt;h2 id=&quot;scalability&quot;&gt;Scalability&lt;/h2&gt;
+
+&lt;h3 id=&quot;multi-server-processing&quot;&gt;Multi-Server Processing&lt;/h3&gt;
+
+&lt;p&gt;Look into Redis for in-memory SQL implementation, as our &lt;code&gt;Event&lt;/code&gt; and &lt;code&gt;Curve&lt;/code&gt;
+data are rather tabular (as are the message queues). This is useful if / when
+we scale up to multiple server nodes.&lt;/p&gt;
+
+&lt;h2 id=&quot;redundancy-and-reliability&quot;&gt;Redundancy and Reliability&lt;/h2&gt;
+
+&lt;p&gt;TBD&lt;/p&gt;
+
+&lt;h2 id=&quot;security&quot;&gt;Security&lt;/h2&gt;
+
+&lt;p&gt;TBD&lt;/p&gt;
+
+&lt;h2 id=&quot;privacy&quot;&gt;Privacy&lt;/h2&gt;
+
+&lt;p&gt;The server will be aware of&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;identifiable user data (IP, username, etc.)&lt;/li&gt;
+  &lt;li&gt;user game input (game commands) and the time the commands were received&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;The server will not keep track of the user IP, or other non-game related
+identifiable data. The user ID, username, and game input will be tracked for
+replay purposes.&lt;/p&gt;
+
+&lt;h2 id=&quot;work-estimates&quot;&gt;Work Estimates&lt;/h2&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Work Item&lt;/th&gt;
+      &lt;th&gt;Time Estimate&lt;/th&gt;
+      &lt;th&gt;Status&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;barebones client and server&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement tick phase&lt;/td&gt;
+      &lt;td&gt;1 day&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement input queue&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement output queue&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DONE&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement create entities&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;DEMO&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;implement pathfind&lt;/td&gt;
+      &lt;td&gt;1 week&lt;/td&gt;
+      &lt;td&gt;MVP (no flow field)&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;h2 id=&quot;footnotes&quot;&gt;Footnotes&lt;/h2&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Terrano, Mark. “1500 Archers on a 28.8: Network Programming in Age of Empires and Beyond.” 2005. &lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Discussing the specifics of the rendering engine is out of scope of
+this design document. &lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fnref:2&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:6&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Stolen from
+&lt;a href=&quot;https://www.forrestthewoods.com/blog/tech_of_planetary_annihilation_chrono_cam/&quot;&gt;The Tech of Planetary Annihilation: ChronoCam&lt;/a&gt;.
+Curves are linear transformations of a variable trajectory. This transformation
+saves on data being sent to the client. &lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fnref:6&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:7&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;We need to decide if we want a generic trigger queue, or a queue
+broken down by category, with the &lt;code&gt;CurveID&lt;/code&gt; still mapping back to a global
+lookup map. &lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fnref:7&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:3&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Botea, Adi. “Near optimal hierarchical path-finding.” 2004. &lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fnref:3&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:4&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Emerson, Elijah. “Crowd Pathfinding and Steering Using Flow Field Tiles.” 2020. &lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fnref:4&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:5&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Claypool, Mark. “The effect of latency on user performance in Real-Time Strategy games.” 2005. &lt;a href=&quot;https://blog.downflux.com/2020/10/09/downflux-networking-design/#fnref:5&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;
+</description>
+          <pubDate>Fri, 09 Oct 2020 00:00:00 -0700</pubDate>
+          <link>https://blog.downflux.com/2020/10/09/downflux-networking-design/</link>
+          <guid isPermaLink="true">https://blog.downflux.com/2020/10/09/downflux-networking-design/</guid>
+
+          
+            <category>design doc</category>
+          
+            <category>server</category>
+          
+
+          
+
+        </item>
+      
+
+    
+
+      
+
+      
+        
+
+        <item>
+
+          <title>Networking Brainstorm</title>
+          <description>&lt;h2 id=&quot;articles&quot;&gt;Articles&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://zoo.cs.yale.edu/classes/cs538/readings/papers/terrano_1500arch.pdf&quot;&gt;1500 Archers on a 28.8: Network Programming in Age of Empires and Beyond&lt;/a&gt; 2001&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Seminal paper on how Age of Empires II dealt with the networking problem by
+implementing client lockstep simulations. Lockstep implementation here requires
+N&lt;sup&gt;2&lt;/sup&gt; stable (but slow) connections.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;http://web.cs.wpi.edu/~claypool/papers/rts/paper.pdf&quot;&gt;The effect of latency on user performance in Real-Time Strategy games&lt;/a&gt; 2005&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Important finding that overall network latency didn’t actually impact the
+outcome of RTS games much.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://dl.acm.org/doi/abs/10.1145/1146816.1146833&quot;&gt;Rokkatan: scaling an RTS game design to the massively multiplayer realm&lt;/a&gt; 2006&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Scales up clients connecting to a game by implementing multiple proxy servers.
+Servers are totally connected but each proxy is only allowed to make a specific
+set of (mutually exclusive) mutations. Features dynamic rebalancing in case a
+server crashes.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.gamedev.net/forums/topic/419969-wargamerts-network-architecture---a-danger-of-lock-step-commands-synchronization/&quot;&gt;Wargame/RTS Network Architecture - a danger of Lock-step Commands Synchronization&lt;/a&gt; 2006&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://gafferongames.com/post/what_every_programmer_needs_to_know_about_game_networking/&quot;&gt;What Every Programmer Needs To Know About Game Networking&lt;/a&gt; 2010&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Goes into detail a bit about the evolution of networking models in gaming; goes
+a bit into detail about how modern day rewind &amp;amp; replay lag compensation works.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://gamedev.stackexchange.com/questions/16669/networking-in-real-time-strategy-games&quot;&gt;Networking in real-time strategy games&lt;/a&gt; 2011&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://gamedev.stackexchange.com/questions/15192/rts-game-protocol&quot;&gt;RTS Game Protocol&lt;/a&gt; 2011&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Short, accessible explanation of one possible lockstep implementation.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.forrestthewoods.com/blog/synchronous_rts_engines_and_a_tale_of_desyncs/&quot;&gt;Synchronous RTS Engines and a Tale of Desyncs&lt;/a&gt; 2011&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Accessible explanation of how &lt;em&gt;Supreme Commander&lt;/em&gt; (2007) implemented and
+optimized lockstep. Specifically deals with global tick synchronization
+implementation – may also be applicable in client / server model.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.forrestthewoods.com/blog/synchronous_rts_engines_2_sync_harder/&quot;&gt;Synchronous RTS Engines 2: Sync Harder&lt;/a&gt; 2011&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Goes into detail about how &lt;em&gt;Supreme Commander&lt;/em&gt; implemented the communications
+and sync protocol. Very useful reference.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;http://www.raknet.com/forum/index.php?topic=4500.0&quot;&gt;Question on Synchronous networking&lt;/a&gt; 2011&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Includes some links to sample implementations of lockstep.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.gamasutra.com/view/news/126022/Opinion_Synchronous_RTS_Engines_And_A_Tale_of_Desyncs.php&quot;&gt;Opinion: Synchronous RTS Engines And A Tale of Desyncs&lt;/a&gt; 2011&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;More information on lockstep implementation and explanation.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://gamedev.stackexchange.com/questions/29258/client-server-rts-networking-with-lockstep-and-lag&quot;&gt;Client-Server RTS networking with lockstep and lag&lt;/a&gt; 2012&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.forrestthewoods.com/blog/tech_of_planetary_annihilation_chrono_cam/&quot;&gt;The Tech of Planetary Annihilation: ChronoCam&lt;/a&gt; 2013&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Very good article on a possible approach to a client-server model of RTS
+network communications – by sending linear transformations of data
+trajectories (instead of frame-by-frame updates) to save on bandwidth.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.forrestthewoods.com/blog/qa_planetary_annihilation_chrono_cam/&quot;&gt;Q&amp;amp;A — Planetary Annihilation Chrono Cam&lt;/a&gt; 2013&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://answers.unity.com/questions/488308/unity-rts-networking.html&quot;&gt;Unity RTS Networking&lt;/a&gt; 2013&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.gamedev.net/forums/topic/663587-planetary-annihilation-networking/&quot;&gt;Planetary Annihilation networking&lt;/a&gt; 2014&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://gamedev.stackexchange.com/questions/75393/networking-for-real-time-strategy-games&quot;&gt;Networking for Real Time Strategy games&lt;/a&gt; 2014&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.gamasutra.com/blogs/MaksymHryniv/20150107/233596/Cross_platform_RTS_synchronization_and_floating_point_indeterminism.php&quot;&gt;Cross platform RTS synchronization and floating point indeterminism&lt;/a&gt; 2015&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://gamedev.stackexchange.com/questions/96166/how-do-i-efficiently-send-rts-unit-selections-over-the-network&quot;&gt;How do I efficiently send RTS unit selections over the network?&lt;/a&gt; 2015&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Convenient back of the envelope bandwith calculations for RTS games.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://medium.com/@treeform/dont-use-lockstep-in-rts-games-b40f3dd6fddb&quot;&gt;Don’t use Lockstep in RTS games&lt;/a&gt; 2016&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.factorio.com/blog/post/fff-76&quot;&gt;Friday Facts #76 - MP inside out&lt;/a&gt; 2015&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;em&gt;Factorio&lt;/em&gt; originally used lockstep to deal with broadcasting game state. This
+is an interesting case as it similarly has to deal with large maps and changing
+terrain with large amounts of data being transferred across multiple clients.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.factorio.com/blog/post/fff-147&quot;&gt;Friday Facts #147 - Multiplayer rewrite&lt;/a&gt; 2016&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Describes in detail the networking model migration for &lt;em&gt;Factorio&lt;/em&gt; from lockstep
+to server-elect model.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.gamasutra.com/blogs/DruErridge/20181004/327885/Building_a_Multiplayer_RTS_in_Unreal_Engine.php&quot;&gt;Building a Multiplayer RTS in Unreal Engine&lt;/a&gt; 2018&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Summarizes lockstep and client-server implementation and provides sample
+command message samples.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.eurogamer.net/articles/2018-01-07-the-making-of-supreme-commander&quot;&gt;The making of Supreme Commander&lt;/a&gt; 2018&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.reddit.com/r/starcraft/comments/8q0jka/how_is_starcraft_2_so_incredibly_responsive/&quot;&gt;How is starcraft 2 so incredibly responsive?&lt;/a&gt; 2018&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Starcraft II’s internal tick rate is 16 - 20Hz; apparently other RTS can be as
+low as 8Hz. Good reference / justification.&lt;/p&gt;
+
+&lt;h2 id=&quot;code-references&quot;&gt;Code References&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/mrdav30/LockstepRTSEngine&quot;&gt;LockstepRTSEngine&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/neurodrone/crdt&quot;&gt;CRDT&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://blog.downflux.com/2020/10/05/networking-brainstorm/ftp://ftp.3drealms.com/source/duke3dsource.zip&quot;&gt;Duke Nukem 3D lockstep implementation&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;queries&quot;&gt;Queries&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.google.com/search?q=rts+game+networking+site:gamedev.stackexchange.com&amp;amp;rlz=1C1CHBF_enUS694US694&amp;amp;sxsrf=ALeKk024wioAzr9rCIlxFbAjzaGjpDvjrQ:1601876726173&amp;amp;sa=X&amp;amp;ved=2ahUKEwiU3fLp35zsAhVQsZ4KHQrtC-cQrQIoBHoECAcQBQ&quot;&gt;RTS game networking query&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+          <pubDate>Mon, 05 Oct 2020 00:00:00 -0700</pubDate>
+          <link>https://blog.downflux.com/2020/10/05/networking-brainstorm/</link>
+          <guid isPermaLink="true">https://blog.downflux.com/2020/10/05/networking-brainstorm/</guid>
+
+          
+            <category>architecture</category>
+          
+            <category>brainstorm</category>
+          
+
+          
+
+        </item>
+      
+
+    
+
+  </channel>
+</rss>
